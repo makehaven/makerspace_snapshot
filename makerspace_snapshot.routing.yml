@@ -1,0 +1,22 @@
+makerspace_snapshot.api_month:
+  path: '/makerspace-snapshot/api/monthly/{ym}'
+  defaults:
+    _controller: '\Drupal\makerspace_snapshot\Controller\SnapshotApiController::monthly'
+  requirements:
+    _permission: 'access content'
+    ym: '^\d{4}-\d{2}$'
+
+makerspace_snapshot.api_compare:
+  path: '/makerspace-snapshot/api/compare'
+  defaults:
+    _controller: '\Drupal\makerspace_snapshot\Controller\SnapshotApiController::compare'
+  requirements:
+    _permission: 'access content'
+
+makerspace_snapshot.sources_form:
+  path: '/admin/config/makerspace/snapshot-sources'
+  defaults:
+    _form: '\Drupal\makerspace_snapshot\Form\SnapshotSourceConfigForm'
+    _title: 'Snapshot Sources'
+  requirements:
+    _permission: 'administer site configuration'

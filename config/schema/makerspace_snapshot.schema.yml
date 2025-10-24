@@ -1,0 +1,19 @@
+makerspace_snapshot.sources:
+  type: config_object
+  label: 'Makerspace Snapshot Sources'
+  mapping:
+    sql_active:
+      type: text
+      label: 'SQL for active members'
+    sql_paused:
+      type: text
+      label: 'SQL for paused members'
+    sql_lapsed:
+      type: text
+      label: 'SQL for lapsed members'
+    sql_joins:
+      type: text
+      label: 'SQL for joins in period'
+    sql_cancels:
+      type: text
+      label: 'SQL for cancels in period'

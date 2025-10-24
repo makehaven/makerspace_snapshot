@@ -1,0 +1,5 @@
+name: 'Makerspace Snapshot'
+type: module
+description: 'Periodic immutable snapshots (monthly) of membership metrics, using your existing plan categories.'
+core_version_requirement: ^10
+package: 'Makerspace'

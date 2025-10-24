@@ -1,0 +1,6 @@
+makerspace_snapshot.admin:
+  title: 'Makerspace Snapshot Sources'
+  description: 'Configure SQL to pull member states and events.'
+  route_name: makerspace_snapshot.sources_form
+  parent: system.admin_config_development
+  weight: 100

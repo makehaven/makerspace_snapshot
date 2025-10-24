@@ -1,0 +1,18 @@
+<?php
+
+/**
+ * @file
+ * Module file for makerspace_snapshot.
+ */
+
+/**
+ * Implements hook_cron().
+ * Runs on the 1st to snapshot the previous month.
+ */
+function makerspace_snapshot_cron() {
+  $now = new \DateTimeImmutable('now', new \DateTimeZone(date_default_timezone_get()));
+  if ($now->format('j') === '1') {
+    $month = (new \DateTimeImmutable('last day of previous month'))->format('Y-m-d');
+    \Drush\Drush::processManager()->drush('makerspace-snapshot:monthly', [], ['month' => $month])->run();
+  }
+}

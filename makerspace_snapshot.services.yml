@@ -1,0 +1,5 @@
+services:
+  Drupal\makerspace_snapshot\Commands\MakerspaceSnapshotCommands:
+    arguments: ['@database']
+    tags:
+      - { name: drush.command }

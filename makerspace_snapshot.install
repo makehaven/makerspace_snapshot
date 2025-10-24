@@ -1,0 +1,62 @@
+<?php
+
+/**
+ * @file
+ * Install file for makerspace_snapshot.
+ */
+
+/**
+ * Implements hook_schema().
+ */
+function makerspace_snapshot_schema() {
+  $schema = [];
+
+  $schema['ms_fact_monthly_org'] = [
+    'description' => 'Monthly org-level snapshot metrics. Immutable by convention.',
+    'fields' => [
+      // Store as 'YYYY-MM-DD' (last day of month). CHAR(10) is portable.
+      'snapshot_month' => ['type' => 'varchar', 'length' => 10, 'not null' => TRUE],
+      'members_active' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'members_paused' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'members_lapsed' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'joins'          => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'cancels'        => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'net_change'     => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      // UNIX timestamp for portability across DBs.
+      'created_at'     => ['type' => 'int', 'not null' => FALSE],
+    ],
+    'primary key' => ['snapshot_month'],
+  ];
+
+  $schema['ms_fact_monthly_plan_counts'] = [
+    'description' => 'Per-plan monthly counts for active/paused/lapsed members.',
+    'fields' => [
+      'snapshot_month' => ['type' => 'varchar', 'length' => 10, 'not null' => TRUE],
+      'plan_code'      => ['type' => 'varchar', 'length' => 128, 'not null' => TRUE],
+      'plan_label'     => ['type' => 'varchar', 'length' => 255, 'not null' => TRUE, 'default' => ''],
+      'active_count'   => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'paused_count'   => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'lapsed_count'   => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+    ],
+    'primary key' => ['snapshot_month', 'plan_code'],
+    'indexes' => [
+      'plan_code_idx' => ['plan_code'],
+    ],
+  ];
+
+  return $schema;
+}
+
+/**
+ * Implements hook_install().
+ */
+function makerspace_snapshot_install() {
+  drupal_install_schema('makerspace_snapshot');
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function makerspace_snapshot_uninstall() {
+  drupal_uninstall_schema('makerspace_snapshot');
+}
