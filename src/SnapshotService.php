@@ -70,7 +70,7 @@ class SnapshotService {
       $stateQuery = function(string $key): array {
         $sql = $this->configFactory->get('makerspace_snapshot.sources')->get($key);
         if (!$sql) return [];
-        $rows = $this->database->query($sql)->fetchAllAssoc(NULL, \PDO::FETCH_ASSOC);
+        $rows = $this->database->query($sql)->fetchAll(\PDO::FETCH_ASSOC);
         return array_map(fn($r) => [
           'member_id' => (string) $r['member_id'],
           'plan_code' => (string) $r['plan_code'],
@@ -87,7 +87,7 @@ class SnapshotService {
           $params = [':start' => $start, ':end' => $end];
         }
 
-        $rows = $this->database->query($sql, $params)->fetchAllAssoc(NULL, \PDO::FETCH_ASSOC);
+        $rows = $this->database->query($sql, $params)->fetchAll(\PDO::FETCH_ASSOC);
         return $rows;
       };
 
