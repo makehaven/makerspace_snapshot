@@ -171,8 +171,6 @@ function makerspace_snapshot_update_10002() {
  * Implements hook_install().
  */
 function makerspace_snapshot_install() {
-  drupal_install_schema('makerspace_snapshot');
-
   // Seed data if tables are empty.
   $connection = \Drupal::database();
   $count = $connection->select('ms_snapshot')->countQuery()->execute()->fetchField();
@@ -222,7 +220,6 @@ function makerspace_snapshot_install() {
  * Implements hook_uninstall().
  */
 function makerspace_snapshot_uninstall() {
-  drupal_uninstall_schema('makerspace_snapshot');
 }
 
 /**
