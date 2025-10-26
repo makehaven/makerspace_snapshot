@@ -162,6 +162,16 @@ class SnapshotAdminForm extends ConfigFormBase {
       '#type' => 'details',
       '#title' => $this->t('Snapshot SQL Queries'),
       '#open' => FALSE,
+      '#description' => $this->t(
+        'Define the SQL queries used to gather snapshot data. The following keys are required:
+        <ul>
+          <li><b>sql_active:</b> Returns the current list of active members. Must include <code>member_id</code>, <code>plan_code</code>, and <code>plan_label</code> columns.</li>
+          <li><b>sql_paused:</b> Returns the current list of paused members. Must include a <code>member_id</code> column.</li>
+          <li><b>sql_lapsed:</b> Returns the current list of lapsed members. Must include a <code>member_id</code> column.</li>
+          <li><b>sql_joins:</b> Returns members who joined within a specific time period. Must include a <code>member_id</code> column. This query will be passed <code>:start</code> and <code>:end</code> parameters.</li>
+          <li><b>sql_cancels:</b> Returns members who canceled within a specific time period. Must include a <code>member_id</code> column. This query will be passed <code>:start</code> and <code>:end</code> parameters.</li>
+        </ul>'
+      ),
     ];
 
     $sources = $this->config('makerspace_snapshot.sources')->get();
