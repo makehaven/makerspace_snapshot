@@ -75,7 +75,7 @@ class SnapshotAdminForm extends ConfigFormBase {
    */
   public function buildForm(array $form, FormStateInterface $form_state) {
     $form['description'] = [
-      '#markup' => '<p>This page allows you to configure and manually trigger snapshots of your website data.</p>',
+      '#markup' => '<p>This page allows you to configure and manually trigger snapshots of your website data. You can edit the <a href="#snapshot-sources">Snapshot SQL Queries</a> at the bottom of this page.</p>',
     ];
 
     $form['config_preview'] = [
@@ -162,6 +162,9 @@ class SnapshotAdminForm extends ConfigFormBase {
       '#type' => 'details',
       '#title' => $this->t('Snapshot SQL Queries'),
       '#open' => FALSE,
+      '#attributes' => [
+        'id' => 'snapshot-sources',
+      ],
       '#description' => $this->t(
         'Define the SQL queries used to gather snapshot data. The following keys are required:
         <ul>
