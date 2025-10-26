@@ -1,0 +1,5 @@
+interval: monthly
+enabled_snapshot_types:
+  - org
+  - plan
+retention_window_months: 24

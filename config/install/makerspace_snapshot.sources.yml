@@ -1,0 +1,21 @@
+sql_active: |
+  SELECT member_id, plan_code, plan_label
+  FROM your_view_active_members;
+
+sql_paused: |
+  SELECT member_id, plan_code, plan_label
+  FROM your_view_paused_members;
+
+sql_lapsed: |
+  SELECT member_id, plan_code, plan_label
+  FROM your_view_lapsed_members;
+
+sql_joins: |
+  -- Expect fields: member_id, plan_code, plan_label, joined_on (YYYY-MM-DD)
+  SELECT member_id, plan_code, plan_label, joined_on
+  FROM your_view_joins_in_period;
+
+sql_cancels: |
+  -- Expect fields: member_id, plan_code, plan_label, canceled_on (YYYY-MM-DD)
+  SELECT member_id, plan_code, plan_label, canceled_on
+  FROM your_view_cancels_in_period;

@@ -1,22 +1,31 @@
-makerspace_snapshot.api_month:
-  path: '/makerspace-snapshot/api/monthly/{ym}'
+makerspace_snapshot.admin:
+  path: '/admin/config/makerspace/snapshot'
   defaults:
-    _controller: '\Drupal\makerspace_snapshot\Controller\SnapshotApiController::monthly'
-  requirements:
-    _permission: 'access content'
-    ym: '^\d{4}-\d{2}$'
-
-makerspace_snapshot.api_compare:
-  path: '/makerspace-snapshot/api/compare'
-  defaults:
-    _controller: '\Drupal\makerspace_snapshot\Controller\SnapshotApiController::compare'
-  requirements:
-    _permission: 'access content'
-
-makerspace_snapshot.sources_form:
-  path: '/admin/config/makerspace/snapshot-sources'
-  defaults:
-    _form: '\Drupal\makerspace_snapshot\Form\SnapshotSourceConfigForm'
-    _title: 'Snapshot Sources'
+    _form: '\Drupal\makerspace_snapshot\Form\SnapshotAdminForm'
+    _title: 'Makerspace Snapshot'
   requirements:
     _permission: 'administer site configuration'
+
+makerspace_snapshot.api.org_level:
+  path: '/makerspace-snapshot/api/org-level/{snapshot_type}'
+  defaults:
+    _controller: '\Drupal\makerspace_snapshot\Controller\SnapshotApiController::getOrgLevelData'
+    _title: 'Org Level Data'
+  requirements:
+    _permission: 'access content'
+  options:
+    parameters:
+      snapshot_type:
+        type: string
+
+makerspace_snapshot.api.plan_level:
+  path: '/makerspace-snapshot/api/plan-level/{snapshot_type}'
+  defaults:
+    _controller: '\Drupal\makerspace_snapshot\Controller\SnapshotApiController::getPlanLevelData'
+    _title: 'Plan Level Data'
+  requirements:
+    _permission: 'access content'
+  options:
+    parameters:
+      snapshot_type:
+        type: string

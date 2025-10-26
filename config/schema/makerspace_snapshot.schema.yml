@@ -3,17 +3,73 @@ makerspace_snapshot.sources:
   label: 'Makerspace Snapshot Sources'
   mapping:
     sql_active:
-      type: text
+      type: string
       label: 'SQL for active members'
     sql_paused:
-      type: text
+      type: string
       label: 'SQL for paused members'
     sql_lapsed:
-      type: text
+      type: string
       label: 'SQL for lapsed members'
     sql_joins:
-      type: text
-      label: 'SQL for joins in period'
+      type: string
+      label: 'SQL for joins'
     sql_cancels:
-      type: text
-      label: 'SQL for cancels in period'
+      type: string
+      label: 'SQL for cancels'
+
+makerspace_snapshot.settings:
+  type: config_object
+  label: 'Makerspace Snapshot Settings'
+  mapping:
+    interval:
+      type: string
+      label: 'Snapshot Interval'
+    enabled_snapshot_types:
+      type: sequence
+      label: 'Enabled snapshot types'
+      sequence:
+        type: string
+    retention_window_months:
+      type: integer
+      label: 'Retention window in months'
+
+makerspace_snapshot.org_metrics:
+  type: config_object
+  label: 'Makerspace Snapshot Org Metrics'
+  mapping:
+    metrics:
+      type: sequence
+      label: 'Org metric definitions'
+      sequence:
+        type: mapping
+        mapping:
+          id:
+            type: string
+            label: 'Machine name'
+          label:
+            type: string
+            label: 'Label'
+          type:
+            type: string
+            label: 'Data type'
+
+makerspace_snapshot.plan_levels:
+  type: config_object
+  label: 'Makerspace Snapshot Plan Levels'
+  mapping:
+    plan_levels:
+      type: sequence
+      label: 'Plan level mappings'
+      sequence:
+        type: mapping
+        mapping:
+          code:
+            type: string
+            label: 'Plan code'
+          label:
+            type: string
+            label: 'Plan label'
+          group:
+            type: string
+            label: 'Optional grouping'
