@@ -6,6 +6,8 @@ use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Database\Connection;
 use Symfony\Component\DependencyInjection\ContainerInterface;
+use Drupal\makerspace_snapshot\SnapshotService;
+use Drupal\Core\Config\ConfigFactoryInterface;
 
 /**
  * Defines a form that configures makerspace_snapshot settings.
@@ -20,13 +22,22 @@ class SnapshotAdminForm extends ConfigFormBase {
   protected $database;
 
   /**
+   * The snapshot service.
+   *
+   * @var \Drupal\makerspace_snapshot\SnapshotService
+   */
+  protected $snapshotService;
+
+  /**
    * Constructs a new SnapshotAdminForm object.
    *
    * @param \Drupal\Core\Database\Connection $database
    *   The database connection.
    */
-  public function __construct(Connection $database) {
+  public function __construct(Connection $database, SnapshotService $snapshotService, ConfigFactoryInterface $config_factory) {
+    parent::__construct($config_factory);
     $this->database = $database;
+    $this->snapshotService = $snapshotService;
   }
 
   /**
@@ -34,7 +45,9 @@ class SnapshotAdminForm extends ConfigFormBase {
    */
   public static function create(ContainerInterface $container) {
     return new static(
-      $container->get('database')
+      $container->get('database'),
+      $container->get('makerspace_snapshot.snapshot_service'),
+      $container->get('config.factory')
     );
   }
 
@@ -86,8 +99,10 @@ class SnapshotAdminForm extends ConfigFormBase {
 
     $metrics = $this->config('makerspace_snapshot.org_metrics')->get('metrics');
     $metric_list = '<ul>';
-    foreach ($metrics as $metric) {
-      $metric_list .= '<li>' . $metric['label'] . ' (' . $metric['id'] . ')</li>';
+    if (is_array($metrics)) {
+      foreach ($metrics as $metric) {
+        $metric_list .= '<li>' . $metric['label'] . ' (' . $metric['id'] . ')</li>';
+      }
     }
     $metric_list .= '</ul>';
     $form['config_preview']['org_metrics'] = [
@@ -147,6 +162,16 @@ class SnapshotAdminForm extends ConfigFormBase {
       '#type' => 'details',
       '#title' => $this->t('Snapshot SQL Queries'),
       '#open' => FALSE,
+      '#description' => $this->t(
+        'Define the SQL queries used to gather snapshot data. The following keys are required:
+        <ul>
+          <li><b>sql_active:</b> Returns the current list of active members. Must include <code>member_id</code>, <code>plan_code</code>, and <code>plan_label</code> columns.</li>
+          <li><b>sql_paused:</b> Returns the current list of paused members. Must include a <code>member_id</code> column.</li>
+          <li><b>sql_lapsed:</b> Returns the current list of lapsed members. Must include a <code>member_id</code> column.</li>
+          <li><b>sql_joins:</b> Returns members who joined within a specific time period. Must include a <code>member_id</code> column. This query will be passed <code>:start</code> and <code>:end</code> parameters.</li>
+          <li><b>sql_cancels:</b> Returns members who canceled within a specific time period. Must include a <code>member_id</code> column. This query will be passed <code>:start</code> and <code>:end</code> parameters.</li>
+        </ul>'
+      ),
     ];
 
     $sources = $this->config('makerspace_snapshot.sources')->get();
@@ -232,15 +257,8 @@ class SnapshotAdminForm extends ConfigFormBase {
         $snapshotType = $form_state->getValue('snapshot_type');
         $isTest = $form_state->getValue('is_test');
 
-        $batch = [
-          'title' => $this->t('Taking snapshot...'),
-          'operations' => [
-            ['makerspace_snapshot_take_snapshot', [$snapshotType, $isTest]],
-          ],
-          'finished' => 'makerspace_snapshot_take_snapshot_finished',
-        ];
-
-        batch_set($batch);
+        $this->snapshotService->takeSnapshot($snapshotType, $isTest);
+        $this->messenger()->addMessage($this->t('Snapshot of type %type has been taken.', ['%type' => $snapshotType]));
     }
 
   /**

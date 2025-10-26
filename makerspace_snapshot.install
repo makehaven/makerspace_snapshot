@@ -23,6 +23,9 @@ function makerspace_snapshot_schema() {
       'created_at' => ['type' => 'int', 'not null' => FALSE],
     ],
     'primary key' => ['id'],
+    'indexes' => [
+      'type_date' => ['snapshot_type', 'snapshot_date'],
+    ],
   ];
 
   $schema['ms_fact_org_snapshot'] = [
@@ -220,4 +223,16 @@ function makerspace_snapshot_install() {
  */
 function makerspace_snapshot_uninstall() {
   drupal_uninstall_schema('makerspace_snapshot');
+}
+
+/**
+ * Add index to ms_snapshot table.
+ */
+function makerspace_snapshot_update_10003() {
+  $connection = \Drupal::database();
+  $schema = $connection->schema();
+
+  if ($schema->tableExists('ms_snapshot')) {
+    $schema->addIndex('ms_snapshot', 'type_date', ['snapshot_type', 'snapshot_date']);
+  }
 }
