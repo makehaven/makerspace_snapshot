@@ -99,8 +99,10 @@ class SnapshotAdminForm extends ConfigFormBase {
 
     $metrics = $this->config('makerspace_snapshot.org_metrics')->get('metrics');
     $metric_list = '<ul>';
-    foreach ($metrics as $metric) {
-      $metric_list .= '<li>' . $metric['label'] . ' (' . $metric['id'] . ')</li>';
+    if (is_array($metrics)) {
+      foreach ($metrics as $metric) {
+        $metric_list .= '<li>' . $metric['label'] . ' (' . $metric['id'] . ')</li>';
+      }
     }
     $metric_list .= '</ul>';
     $form['config_preview']['org_metrics'] = [
