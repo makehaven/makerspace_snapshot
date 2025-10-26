@@ -74,6 +74,10 @@ class SnapshotAdminForm extends ConfigFormBase {
    * {@inheritdoc}
    */
   public function buildForm(array $form, FormStateInterface $form_state) {
+    $form['description'] = [
+      '#markup' => '<p>This page allows you to configure and manually trigger snapshots of your website data. You can edit the <a href="/admin/config/makerspace/snapshot/sql">Snapshot SQL Queries</a> on a dedicated configuration page.</p>',
+    ];
+
     $form['config_preview'] = [
       '#type' => 'details',
       '#title' => $this->t('Loaded Configurations'),

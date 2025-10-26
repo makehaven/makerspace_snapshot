@@ -1,9 +1,0 @@
-makerspace_snapshot.admin_settings:
-  route_name: makerspace_snapshot.admin
-  title: 'Settings'
-  base_route: makerspace_snapshot.admin
-
-makerspace_snapshot.admin_sql:
-  route_name: makerspace_snapshot.sources
-  title: 'SQL Sources'
-  base_route: makerspace_snapshot.admin
