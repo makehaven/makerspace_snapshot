@@ -1,0 +1,3 @@
+access makerspace snapshot api:
+  title: 'Access Makerspace Snapshot API'
+  description: 'Allow access to the Makerspace Snapshot JSON endpoints.'

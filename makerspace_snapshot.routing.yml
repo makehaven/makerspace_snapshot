@@ -12,7 +12,7 @@ makerspace_snapshot.api.org_level:
     _controller: '\Drupal\makerspace_snapshot\Controller\SnapshotApiController::getOrgLevelData'
     _title: 'Org Level Data'
   requirements:
-    _permission: 'access content'
+    _permission: 'access makerspace snapshot api'
   options:
     parameters:
       snapshot_type:
@@ -24,7 +24,7 @@ makerspace_snapshot.api.plan_level:
     _controller: '\Drupal\makerspace_snapshot\Controller\SnapshotApiController::getPlanLevelData'
     _title: 'Plan Level Data'
   requirements:
-    _permission: 'access content'
+    _permission: 'access makerspace snapshot api'
   options:
     parameters:
       snapshot_type:

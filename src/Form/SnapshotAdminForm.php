@@ -6,6 +6,8 @@ use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Database\Connection;
 use Symfony\Component\DependencyInjection\ContainerInterface;
+use Drupal\makerspace_snapshot\SnapshotService;
+use Drupal\Core\Config\ConfigFactoryInterface;
 
 /**
  * Defines a form that configures makerspace_snapshot settings.
@@ -20,13 +22,22 @@ class SnapshotAdminForm extends ConfigFormBase {
   protected $database;
 
   /**
+   * The snapshot service.
+   *
+   * @var \Drupal\makerspace_snapshot\SnapshotService
+   */
+  protected $snapshotService;
+
+  /**
    * Constructs a new SnapshotAdminForm object.
    *
    * @param \Drupal\Core\Database\Connection $database
    *   The database connection.
    */
-  public function __construct(Connection $database) {
+  public function __construct(Connection $database, SnapshotService $snapshotService, ConfigFactoryInterface $config_factory) {
+    parent::__construct($config_factory);
     $this->database = $database;
+    $this->snapshotService = $snapshotService;
   }
 
   /**
@@ -34,7 +45,9 @@ class SnapshotAdminForm extends ConfigFormBase {
    */
   public static function create(ContainerInterface $container) {
     return new static(
-      $container->get('database')
+      $container->get('database'),
+      $container->get('makerspace_snapshot.snapshot_service'),
+      $container->get('config.factory')
     );
   }
 
@@ -232,15 +245,8 @@ class SnapshotAdminForm extends ConfigFormBase {
         $snapshotType = $form_state->getValue('snapshot_type');
         $isTest = $form_state->getValue('is_test');
 
-        $batch = [
-          'title' => $this->t('Taking snapshot...'),
-          'operations' => [
-            ['makerspace_snapshot_take_snapshot', [$snapshotType, $isTest]],
-          ],
-          'finished' => 'makerspace_snapshot_take_snapshot_finished',
-        ];
-
-        batch_set($batch);
+        $this->snapshotService->takeSnapshot($snapshotType, $isTest);
+        $this->messenger()->addMessage($this->t('Snapshot of type %type has been taken.', ['%type' => $snapshotType]));
     }
 
   /**

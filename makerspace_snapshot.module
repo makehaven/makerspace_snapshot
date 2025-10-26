@@ -47,66 +47,6 @@ function makerspace_snapshot_cron() {
 
   if ($should_run) {
     $snapshot_date = (new DrupalDateTime('yesterday'))->format('Y-m-d');
-
-    $batch = [
-      'title' => t('Taking snapshot...'),
-      'operations' => [
-        ['makerspace_snapshot_take_snapshot', [$snapshot_type, FALSE, $snapshot_date]],
-      ],
-      'finished' => 'makerspace_snapshot_take_snapshot_finished',
-    ];
-
-    batch_set($batch);
-  }
-}
-
-/**
- * Batch operation to take a snapshot.
- *
- * @param string $snapshot_type
- *   The type of snapshot to take.
- * @param bool $is_test
- *   Whether the snapshot is a test snapshot.
- * @param string $snapshot_date
- *   The date of the snapshot.
- * @param array $context
- *   The batch context.
- */
-function makerspace_snapshot_take_snapshot($snapshot_type, $is_test, $snapshot_date = NULL, &$context) {
-  $snapshot_date = $snapshot_date ?? (new DrupalDateTime())->format('Y-m-d');
-  $is_test_flag = $is_test ? '--is-test' : '';
-
-  $command = "makerspace-snapshot:snapshot --snapshot-type={$snapshot_type} --snapshot-date={$snapshot_date} {$is_test_flag}";
-
-  /** @var \Drupal\Core\ProxyClass\Extension\ModuleHandler $module_handler */
-  $module_handler = \Drupal::service('module_handler');
-  if ($module_handler->moduleExists('drush')) {
-    drush_backend_batch_process($command);
-  } else {
-    // Fallback for when Drush is not available.
-    // This is not recommended for production environments.
-    shell_exec("drush {$command}");
-  }
-
-  $context['results']['snapshot_type'] = $snapshot_type;
-  $context['message'] = t('Taking snapshot of type %type...', ['%type' => $snapshot_type]);
-}
-
-/**
- * Finished callback for the snapshot batch process.
- *
- * @param bool $success
- *   Indicates whether the batch operation was successful.
- * @param array $results
- *   An array of results that were set in the batch context.
- * @param array $operations
- *   An array of the operations that had not been processed by the batch.
- */
-function makerspace_snapshot_take_snapshot_finished($success, $results, $operations) {
-  if ($success) {
-    \Drupal::messenger()->addMessage(t('Snapshot of type %type has been taken.', ['%type' => $results['snapshot_type']]));
-  }
-  else {
-    \Drupal::messenger()->addError(t('An error occurred while taking the snapshot.'));
+    \Drupal::service('makerspace_snapshot.snapshot_service')->takeSnapshot($snapshot_type, FALSE, $snapshot_date);
   }
 }
