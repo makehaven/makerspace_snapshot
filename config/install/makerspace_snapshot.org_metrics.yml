@@ -1,0 +1,19 @@
+metrics:
+  - id: members_active
+    label: "Active members"
+    type: integer
+  - id: members_paused
+    label: "Paused members"
+    type: integer
+  - id: members_lapsed
+    label: "Lapsed members"
+    type: integer
+  - id: joins
+    label: "Joins"
+    type: integer
+  - id: cancels
+    label: "Cancels"
+    type: integer
+  - id: net_change
+    label: "Net change"
+    type: integer

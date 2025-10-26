@@ -18,7 +18,7 @@ function makerspace_snapshot_schema() {
     'fields' => [
       'id' => ['type' => 'serial', 'not null' => TRUE],
       'snapshot_type' => ['type' => 'varchar', 'length' => 255, 'not null' => TRUE],
-      'snapshot_date' => ['type' => 'varchar', 'length' => 10, 'not null' => TRUE], // YYYY-MM-DD
+      'snapshot_date' => ['type' => 'varchar', 'length' => 10, 'not null' => TRUE], // YYYY-MM-01
       'is_test' => ['type' => 'int', 'size' => 'tiny', 'not null' => TRUE, 'default' => 0],
       'created_at' => ['type' => 'int', 'not null' => FALSE],
     ],
@@ -40,14 +40,12 @@ function makerspace_snapshot_schema() {
   ];
 
   $schema['ms_fact_plan_snapshot'] = [
-    'description' => 'Per-plan snapshot counts for active/paused/lapsed members.',
+    'description' => 'Per-plan snapshot counts for active members.',
     'fields' => [
       'snapshot_id' => ['type' => 'int', 'not null' => TRUE],
       'plan_code'      => ['type' => 'varchar', 'length' => 128, 'not null' => TRUE],
       'plan_label'     => ['type' => 'varchar', 'length' => 255, 'not null' => TRUE, 'default' => ''],
-      'active_count'   => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
-      'paused_count'   => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
-      'lapsed_count'   => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'count_members'   => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
     ],
     'primary key' => ['snapshot_id', 'plan_code'],
     'indexes' => [
@@ -92,10 +90,11 @@ function makerspace_snapshot_update_10001() {
       ->execute();
 
     foreach ($results as $row) {
+      $snapshot_date = (new \DateTimeImmutable($row->snapshot_month))->format('Y-m-01');
       $snapshot_id = $connection->insert('ms_snapshot')
         ->fields([
           'snapshot_type' => 'monthly',
-          'snapshot_date' => $row->snapshot_month,
+          'snapshot_date' => $snapshot_date,
           'is_test' => 0,
           'created_at' => $row->created_at,
         ])
@@ -125,9 +124,7 @@ function makerspace_snapshot_update_10001() {
                 'snapshot_id' => $snapshot_id,
                 'plan_code' => $plan_row->plan_code,
                 'plan_label' => $plan_row->plan_label,
-                'active_count' => $plan_row->active_count,
-                'paused_count' => $plan_row->paused_count,
-                'lapsed_count' => $plan_row->lapsed_count,
+                'count_members' => $plan_row->active_count,
               ])->execute();
           }
       }
@@ -144,10 +141,78 @@ function makerspace_snapshot_update_10001() {
 }
 
 /**
+ * Update ms_fact_plan_snapshot to use count_members.
+ */
+function makerspace_snapshot_update_10002() {
+  $connection = \Drupal::database();
+  $schema = $connection->schema();
+
+  if ($schema->tableExists('ms_fact_plan_snapshot')) {
+    if ($schema->fieldExists('ms_fact_plan_snapshot', 'active_count')) {
+      $schema->changeField('ms_fact_plan_snapshot', 'active_count', 'count_members', [
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ]);
+    }
+    if ($schema->fieldExists('ms_fact_plan_snapshot', 'paused_count')) {
+      $schema->dropField('ms_fact_plan_snapshot', 'paused_count');
+    }
+    if ($schema->fieldExists('ms_fact_plan_snapshot', 'lapsed_count')) {
+      $schema->dropField('ms_fact_plan_snapshot', 'lapsed_count');
+    }
+  }
+}
+
+/**
  * Implements hook_install().
  */
 function makerspace_snapshot_install() {
   drupal_install_schema('makerspace_snapshot');
+
+  // Seed data if tables are empty.
+  $connection = \Drupal::database();
+  $count = $connection->select('ms_snapshot')->countQuery()->execute()->fetchField();
+  if ($count == 0) {
+    $snapshot_date = (new \DateTimeImmutable('first day of last month'))->format('Y-m-01');
+    $snapshot_id = $connection->insert('ms_snapshot')
+      ->fields([
+        'snapshot_type' => 'monthly',
+        'snapshot_date' => $snapshot_date,
+        'is_test' => 0,
+        'created_at' => time(),
+      ])
+      ->execute();
+
+    if ($snapshot_id) {
+      $connection->insert('ms_fact_org_snapshot')
+        ->fields([
+          'snapshot_id' => $snapshot_id,
+          'members_active' => 700,
+          'members_paused' => 22,
+          'members_lapsed' => 9,
+          'joins'          => 35,
+          'cancels'        => 18,
+          'net_change'     => 17,
+        ])->execute();
+
+      $connection->insert('ms_fact_plan_snapshot')
+        ->fields([
+          'snapshot_id' => $snapshot_id,
+          'plan_code' => 'STD',
+          'plan_label' => 'Standard',
+          'count_members' => 540,
+        ])->execute();
+
+      $connection->insert('ms_fact_plan_snapshot')
+        ->fields([
+          'snapshot_id' => $snapshot_id,
+          'plan_code' => 'DIS',
+          'plan_label' => 'Discount',
+          'count_members' => 120,
+        ])->execute();
+    }
+  }
 }
 
 /**

@@ -6,9 +6,6 @@ use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Database\Connection;
 use Symfony\Component\DependencyInjection\ContainerInterface;
-use Drupal\Core\Queue\QueueFactory;
-use Drupal\Core\Queue\QueueWorkerManagerInterface;
-use Drupal\Core\Queue\SuspendQueueException;
 
 /**
  * Defines a form that configures makerspace_snapshot settings.
@@ -52,7 +49,12 @@ class SnapshotAdminForm extends ConfigFormBase {
    * {@inheritdoc}
    */
   protected function getEditableConfigNames() {
-    return ['makerspace_snapshot.settings', 'makerspace_snapshot.sources'];
+    return [
+      'makerspace_snapshot.settings',
+      'makerspace_snapshot.sources',
+      'makerspace_snapshot.org_metrics',
+      'makerspace_snapshot.plan_levels',
+    ];
   }
 
   /**
@@ -63,17 +65,47 @@ class SnapshotAdminForm extends ConfigFormBase {
       '#markup' => '<p>This page allows you to configure and manually trigger snapshots of your website data.</p>',
     ];
 
-    $form['snapshot_interval'] = [
-      '#type' => 'select',
-      '#title' => $this->t('Snapshot Interval'),
-      '#options' => [
-        'monthly' => $this->t('Monthly'),
-        'quarterly' => $this->t('Quarterly'),
-        'annually' => $this->t('Annually'),
-        'daily' => $this->t('Daily'),
-      ],
-      '#default_value' => $this->config('makerspace_snapshot.settings')->get('interval'),
-      '#description' => $this->t('Select the interval at which snapshots should be automatically taken.'),
+    $form['config_preview'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Loaded Configurations'),
+      '#open' => TRUE,
+    ];
+
+    $settings = $this->config('makerspace_snapshot.settings');
+    $form['config_preview']['settings'] = [
+      '#type' => 'item',
+      '#title' => $this->t('Settings'),
+      '#markup' => 'Interval: ' . $settings->get('interval') . '<br>' .
+                   'Enabled Types: ' . implode(', ', $settings->get('enabled_snapshot_types')) . '<br>' .
+                   'Retention (months): ' . $settings->get('retention_window_months'),
+    ];
+
+    $metrics = $this->config('makerspace_snapshot.org_metrics')->get('metrics');
+    $metric_list = '<ul>';
+    foreach ($metrics as $metric) {
+      $metric_list .= '<li>' . $metric['label'] . ' (' . $metric['id'] . ')</li>';
+    }
+    $metric_list .= '</ul>';
+    $form['config_preview']['org_metrics'] = [
+      '#type' => 'item',
+      '#title' => $this->t('Org Metrics'),
+      '#markup' => $metric_list,
+    ];
+
+    $plans = $this->config('makerspace_snapshot.plan_levels')->get('plan_levels');
+    $plan_list = '<ul>';
+    if (empty($plans)) {
+      $plan_list = '<p>No plan levels configured.</p>';
+    } else {
+      foreach ($plans as $plan) {
+        $plan_list .= '<li>' . $plan['label'] . ' (' . $plan['code'] . ')</li>';
+      }
+      $plan_list .= '</ul>';
+    }
+    $form['config_preview']['plan_levels'] = [
+      '#type' => 'item',
+      '#title' => $this->t('Plan Levels'),
+      '#markup' => $plan_list,
     ];
 
     $form['manual_snapshot'] = [
@@ -175,10 +207,6 @@ class SnapshotAdminForm extends ConfigFormBase {
    * {@inheritdoc}
    */
   public function submitForm(array &$form, FormStateInterface $form_state) {
-    $this->config('makerspace_snapshot.settings')
-      ->set('interval', $form_state->getValue('snapshot_interval'))
-      ->save();
-
     $config = $this->config('makerspace_snapshot.sources');
     $values = $form_state->getValue('snapshot_sources');
     if (is_array($values)) {
