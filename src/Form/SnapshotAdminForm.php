@@ -175,26 +175,28 @@ class SnapshotAdminForm extends ConfigFormBase {
     ];
 
     $rows = [];
-    $snapshots = $this->database->select('ms_snapshot', 's')
-      ->fields('s')
-      ->orderBy('created_at', 'DESC')
-      ->execute();
+    if ($this->database->schema()->tableExists('ms_snapshot')) {
+      $snapshots = $this->database->select('ms_snapshot', 's')
+        ->fields('s')
+        ->orderBy('created_at', 'DESC')
+        ->execute();
 
-    foreach ($snapshots as $snapshot) {
-      $rows[$snapshot->id] = [
-        'snapshot_id' => $snapshot->id,
-        'snapshot_type' => $snapshot->snapshot_type,
-        'snapshot_date' => $snapshot->snapshot_date,
-        'is_test' => $snapshot->is_test ? $this->t('Yes') : $this->t('No'),
-        'created_at' => date('Y-m-d H:i:s', $snapshot->created_at),
-        'operations' => [
-          '#type' => 'submit',
-          '#value' => $this->t('Delete'),
-          '#submit' => ['::submitDeleteSnapshot'],
-          '#attributes' => ['snapshot-id' => $snapshot->id],
-          '#access' => (bool) $snapshot->is_test,
-        ],
-      ];
+      foreach ($snapshots as $snapshot) {
+        $rows[$snapshot->id] = [
+          'snapshot_id' => $snapshot->id,
+          'snapshot_type' => $snapshot->snapshot_type,
+          'snapshot_date' => $snapshot->snapshot_date,
+          'is_test' => $snapshot->is_test ? $this->t('Yes') : $this->t('No'),
+          'created_at' => date('Y-m-d H:i:s', $snapshot->created_at),
+          'operations' => [
+            '#type' => 'submit',
+            '#value' => $this->t('Delete'),
+            '#submit' => ['::submitDeleteSnapshot'],
+            '#attributes' => ['snapshot-id' => $snapshot->id],
+            '#access' => (bool) $snapshot->is_test,
+          ],
+        ];
+      }
     }
 
     $form['existing_snapshots']['table'] = [
