@@ -72,11 +72,15 @@ class SnapshotAdminForm extends ConfigFormBase {
     ];
 
     $settings = $this->config('makerspace_snapshot.settings');
+    $enabled_types = $settings->get('enabled_snapshot_types');
+    if (!is_array($enabled_types)) {
+        $enabled_types = $enabled_types ? [$enabled_types] : [];
+    }
     $form['config_preview']['settings'] = [
       '#type' => 'item',
       '#title' => $this->t('Settings'),
       '#markup' => 'Interval: ' . $settings->get('interval') . '<br>' .
-                   'Enabled Types: ' . implode(', ', $settings->get('enabled_snapshot_types')) . '<br>' .
+                   'Enabled Types: ' . implode(', ', $enabled_types) . '<br>' .
                    'Retention (months): ' . $settings->get('retention_window_months'),
     ];
 
