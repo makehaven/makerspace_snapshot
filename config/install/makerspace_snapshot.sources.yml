@@ -1,21 +1,63 @@
 sql_active: |
-  SELECT member_id, plan_code, plan_label
-  FROM your_view_active_members;
-
+  SELECT
+    COALESCE(CAST(uf.uf_id AS CHAR), CONCAT('civi:', m.contact_id)) AS member_id,
+    UPPER(REPLACE(mt.name, ' ', '_')) AS plan_code,
+    mt.name AS plan_label
+  FROM civicrm_membership m
+  JOIN civicrm_membership_type mt ON mt.id = m.membership_type_id
+  JOIN civicrm_membership_status s ON s.id = m.status_id
+  LEFT JOIN civicrm_uf_match uf ON uf.contact_id = m.contact_id
+  WHERE s.is_current_member = 1
+    AND (m.is_test IS NULL OR m.is_test = 0)
 sql_paused: |
-  SELECT member_id, plan_code, plan_label
-  FROM your_view_paused_members;
-
+  SELECT
+    COALESCE(CAST(uf.uf_id AS CHAR), CONCAT('civi:', m.contact_id)) AS member_id,
+    UPPER(REPLACE(mt.name, ' ', '_')) AS plan_code,
+    mt.name AS plan_label
+  FROM civicrm_membership m
+  JOIN civicrm_membership_type mt ON mt.id = m.membership_type_id
+  JOIN civicrm_membership_status s ON s.id = m.status_id
+  LEFT JOIN civicrm_uf_match uf ON uf.contact_id = m.contact_id
+  WHERE s.name LIKE '%Pause%'
+    AND (m.is_test IS NULL OR m.is_test = 0)
 sql_lapsed: |
-  SELECT member_id, plan_code, plan_label
-  FROM your_view_lapsed_members;
-
+  SELECT
+    COALESCE(CAST(uf.uf_id AS CHAR), CONCAT('civi:', m.contact_id)) AS member_id,
+    UPPER(REPLACE(mt.name, ' ', '_')) AS plan_code,
+    mt.name AS plan_label
+  FROM civicrm_membership m
+  JOIN civicrm_membership_type mt ON mt.id = m.membership_type_id
+  JOIN civicrm_membership_status s ON s.id = m.status_id
+  LEFT JOIN civicrm_uf_match uf ON uf.contact_id = m.contact_id
+  WHERE s.is_current_member = 0
+    AND s.is_expired = 1
+    AND (m.is_test IS NULL OR m.is_test = 0)
 sql_joins: |
-  -- Expect fields: member_id, plan_code, plan_label, joined_on (YYYY-MM-DD)
-  SELECT member_id, plan_code, plan_label, joined_on
-  FROM your_view_joins_in_period;
-
+  SELECT
+    COALESCE(CAST(uf.uf_id AS CHAR), CONCAT('civi:', m.contact_id)) AS member_id,
+    UPPER(REPLACE(mt.name, ' ', '_')) AS plan_code,
+    mt.name AS plan_label,
+    DATE(m.start_date) AS joined_on
+  FROM civicrm_membership m
+  JOIN civicrm_membership_type mt ON mt.id = m.membership_type_id
+  LEFT JOIN civicrm_uf_match uf ON uf.contact_id = m.contact_id
+  WHERE (m.is_test IS NULL OR m.is_test = 0)
+    AND m.start_date IS NOT NULL
+    AND DATE(m.start_date) >= :start
+    AND DATE(m.start_date) <  :end
 sql_cancels: |
-  -- Expect fields: member_id, plan_code, plan_label, canceled_on (YYYY-MM-DD)
-  SELECT member_id, plan_code, plan_label, canceled_on
-  FROM your_view_cancels_in_period;
+  SELECT
+    COALESCE(CAST(uf.uf_id AS CHAR), CONCAT('civi:', m.contact_id)) AS member_id,
+    UPPER(REPLACE(mt.name, ' ', '_')) AS plan_code,
+    mt.name AS plan_label,
+    DATE(l.modified_date) AS canceled_on
+  FROM civicrm_membership m
+  JOIN civicrm_membership_type mt ON mt.id = m.membership_type_id
+  JOIN civicrm_membership_log l ON l.membership_id = m.id
+  JOIN civicrm_membership_status s ON s.id = l.status_id
+  LEFT JOIN civicrm_uf_match uf ON uf.contact_id = m.contact_id
+  WHERE (m.is_test IS NULL OR m.is_test = 0)
+    AND s.is_cancelled = 1
+    AND l.modified_date IS NOT NULL
+    AND DATE(l.modified_date) >= :start
+    AND DATE(l.modified_date) <  :end
