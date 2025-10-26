@@ -1,63 +1,22 @@
 sql_active: |
-  SELECT
-    COALESCE(CAST(uf.uf_id AS CHAR), CONCAT('civi:', m.contact_id)) AS member_id,
-    UPPER(REPLACE(mt.name, ' ', '_')) AS plan_code,
-    mt.name AS plan_label
-  FROM civicrm_membership m
-  JOIN civicrm_membership_type mt ON mt.id = m.membership_type_id
-  JOIN civicrm_membership_status s ON s.id = m.status_id
-  LEFT JOIN civicrm_uf_match uf ON uf.contact_id = m.contact_id
-  WHERE s.is_current_member = 1
-    AND (m.is_test IS NULL OR m.is_test = 0)
+  SELECT u.uid AS member_id, 'MEMBER' AS plan_code, 'Member' AS plan_label
+  FROM users_field_data u
+  JOIN user__roles r ON u.uid = r.entity_id
+  WHERE r.roles_target_id = 'member' AND u.status = 1
 sql_paused: |
-  SELECT
-    COALESCE(CAST(uf.uf_id AS CHAR), CONCAT('civi:', m.contact_id)) AS member_id,
-    UPPER(REPLACE(mt.name, ' ', '_')) AS plan_code,
-    mt.name AS plan_label
-  FROM civicrm_membership m
-  JOIN civicrm_membership_type mt ON mt.id = m.membership_type_id
-  JOIN civicrm_membership_status s ON s.id = m.status_id
-  LEFT JOIN civicrm_uf_match uf ON uf.contact_id = m.contact_id
-  WHERE s.name LIKE '%Pause%'
-    AND (m.is_test IS NULL OR m.is_test = 0)
+  SELECT u.uid AS member_id, 'MEMBER_PAUSED' AS plan_code, 'Member (Paused)' AS plan_label
+  FROM users_field_data u
+  JOIN user__roles r ON u.uid = r.entity_id
+  WHERE r.roles_target_id = 'member_paused' AND u.status = 1
 sql_lapsed: |
-  SELECT
-    COALESCE(CAST(uf.uf_id AS CHAR), CONCAT('civi:', m.contact_id)) AS member_id,
-    UPPER(REPLACE(mt.name, ' ', '_')) AS plan_code,
-    mt.name AS plan_label
-  FROM civicrm_membership m
-  JOIN civicrm_membership_type mt ON mt.id = m.membership_type_id
-  JOIN civicrm_membership_status s ON s.id = m.status_id
-  LEFT JOIN civicrm_uf_match uf ON uf.contact_id = m.contact_id
-  WHERE s.is_current_member = 0
-    AND s.is_expired = 1
-    AND (m.is_test IS NULL OR m.is_test = 0)
+  SELECT u.uid AS member_id, 'MEMBER_LAPSED' AS plan_code, 'Member (Lapsed)' AS plan_label
+  FROM users_field_data u
+  WHERE u.uid NOT IN (SELECT entity_id FROM user__roles WHERE roles_target_id = 'member')
 sql_joins: |
-  SELECT
-    COALESCE(CAST(uf.uf_id AS CHAR), CONCAT('civi:', m.contact_id)) AS member_id,
-    UPPER(REPLACE(mt.name, ' ', '_')) AS plan_code,
-    mt.name AS plan_label,
-    DATE(m.start_date) AS joined_on
-  FROM civicrm_membership m
-  JOIN civicrm_membership_type mt ON mt.id = m.membership_type_id
-  LEFT JOIN civicrm_uf_match uf ON uf.contact_id = m.contact_id
-  WHERE (m.is_test IS NULL OR m.is_test = 0)
-    AND m.start_date IS NOT NULL
-    AND DATE(m.start_date) >= :start
-    AND DATE(m.start_date) <  :end
+  SELECT u.uid AS member_id, 'MEMBER' AS plan_code, 'Member' AS plan_label,
+         FROM_UNIXTIME(u.created, '%Y-%m-%d') AS joined_on
+  FROM users_field_data u
+  JOIN user__roles r ON u.uid = r.entity_id
+  WHERE r.roles_target_id = 'member' AND u.created BETWEEN UNIX_TIMESTAMP(:start) AND UNIX_TIMESTAMP(:end)
 sql_cancels: |
-  SELECT
-    COALESCE(CAST(uf.uf_id AS CHAR), CONCAT('civi:', m.contact_id)) AS member_id,
-    UPPER(REPLACE(mt.name, ' ', '_')) AS plan_code,
-    mt.name AS plan_label,
-    DATE(l.modified_date) AS canceled_on
-  FROM civicrm_membership m
-  JOIN civicrm_membership_type mt ON mt.id = m.membership_type_id
-  JOIN civicrm_membership_log l ON l.membership_id = m.id
-  JOIN civicrm_membership_status s ON s.id = l.status_id
-  LEFT JOIN civicrm_uf_match uf ON uf.contact_id = m.contact_id
-  WHERE (m.is_test IS NULL OR m.is_test = 0)
-    AND s.is_cancelled = 1
-    AND l.modified_date IS NOT NULL
-    AND DATE(l.modified_date) >= :start
-    AND DATE(l.modified_date) <  :end
+  SELECT NULL AS member_id, NULL AS plan_code, NULL AS plan_label, NULL AS canceled_on WHERE 1=0
