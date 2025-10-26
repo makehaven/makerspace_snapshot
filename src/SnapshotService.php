@@ -81,7 +81,13 @@ class SnapshotService {
       $periodQuery = function(string $key, string $start, string $end): array {
         $sql = $this->configFactory->get('makerspace_snapshot.sources')->get($key);
         if (!$sql) return [];
-        $rows = $this->database->query($sql, [':start' => $start, ':end' => $end])->fetchAllAssoc(NULL, \PDO::FETCH_ASSOC);
+
+        $params = [];
+        if (strpos($sql, ':start') !== false && strpos($sql, ':end') !== false) {
+          $params = [':start' => $start, ':end' => $end];
+        }
+
+        $rows = $this->database->query($sql, $params)->fetchAllAssoc(NULL, \PDO::FETCH_ASSOC);
         return $rows;
       };
 
