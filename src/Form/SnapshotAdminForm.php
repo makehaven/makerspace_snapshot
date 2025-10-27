@@ -8,6 +8,7 @@ use Drupal\Core\Database\Connection;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Drupal\makerspace_snapshot\SnapshotService;
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Url;
 
 /**
  * Defines a form that configures makerspace_snapshot settings.
@@ -188,11 +189,30 @@ class SnapshotAdminForm extends ConfigFormBase {
           'is_test' => $snapshot->is_test ? $this->t('Yes') : $this->t('No'),
           'created_at' => date('Y-m-d H:i:s', $snapshot->created_at),
           'operations' => [
-            '#type' => 'submit',
-            '#value' => $this->t('Delete'),
-            '#submit' => ['::submitDeleteSnapshot'],
-            '#attributes' => ['snapshot-id' => $snapshot->id],
-            '#access' => (bool) $snapshot->is_test,
+            'data' => [
+              '#type' => 'container',
+              'download_links' => [
+                '#type' => 'dropbutton',
+                '#links' => [
+                  'download_org_csv' => [
+                    'title' => $this->t('Download Org CSV'),
+                    'url' => Url::fromRoute('makerspace_snapshot.download.org_level', ['snapshot_id' => $snapshot->id]),
+                  ],
+                  'download_plan_csv' => [
+                    'title' => $this->t('Download Plan CSV'),
+                    'url' => Url::fromRoute('makerspace_snapshot.download.plan_level', ['snapshot_id' => $snapshot->id]),
+                  ],
+                ],
+              ],
+              'delete' => [
+                '#type' => 'submit',
+                '#value' => $this->t('Delete'),
+                '#name' => 'delete-' . $snapshot->id,
+                '#submit' => ['::submitDeleteSnapshot'],
+                '#attributes' => ['snapshot-id' => $snapshot->id],
+                '#access' => (bool) $snapshot->is_test,
+              ],
+            ]
           ],
         ];
       }
