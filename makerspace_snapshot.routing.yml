@@ -17,6 +17,13 @@ makerspace_snapshot.api.org_level:
     parameters:
       snapshot_type:
         type: string
+makerspace_snapshot.sources:
+  path: '/admin/config/makerspace/snapshot/sql'
+  defaults:
+    _form: '\Drupal\makerspace_snapshot\Form\SnapshotSourceConfigForm'
+    _title: 'Configure SQL Sources'
+  requirements:
+    _permission: 'administer site configuration'
 
 makerspace_snapshot.api.plan_level:
   path: '/makerspace-snapshot/api/plan-level/{snapshot_type}'

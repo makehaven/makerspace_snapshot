@@ -75,7 +75,7 @@ class SnapshotAdminForm extends ConfigFormBase {
    */
   public function buildForm(array $form, FormStateInterface $form_state) {
     $form['description'] = [
-      '#markup' => '<p>This page allows you to configure and manually trigger snapshots of your website data. You can edit the <a href="#snapshot-sources">Snapshot SQL Queries</a> at the bottom of this page.</p>',
+      '#markup' => '<p>This page allows you to configure and manually trigger snapshots of your website data. You can edit the <a href="/admin/config/makerspace/snapshot/sql">Snapshot SQL Queries</a> on a dedicated configuration page.</p>',
     ];
 
     $form['config_preview'] = [
@@ -157,35 +157,6 @@ class SnapshotAdminForm extends ConfigFormBase {
       '#value' => $this->t('Take Snapshot Now'),
       '#submit' => ['::submitManualSnapshot'],
     ];
-
-    $form['snapshot_sources'] = [
-      '#type' => 'details',
-      '#title' => $this->t('Snapshot SQL Queries'),
-      '#open' => FALSE,
-      '#attributes' => [
-        'id' => 'snapshot-sources',
-      ],
-      '#description' => $this->t(
-        'Define the SQL queries used to gather snapshot data. The following keys are required:
-        <ul>
-          <li><b>sql_active:</b> Returns the current list of active members. Must include <code>member_id</code>, <code>plan_code</code>, and <code>plan_label</code> columns.</li>
-          <li><b>sql_paused:</b> Returns the current list of paused members. Must include a <code>member_id</code> column.</li>
-          <li><b>sql_lapsed:</b> Returns the current list of lapsed members. Must include a <code>member_id</code> column.</li>
-          <li><b>sql_joins:</b> Returns members who joined within a specific time period. Must include a <code>member_id</code> column. This query will be passed <code>:start</code> and <code>:end</code> parameters.</li>
-          <li><b>sql_cancels:</b> Returns members who canceled within a specific time period. Must include a <code>member_id</code> column. This query will be passed <code>:start</code> and <code>:end</code> parameters.</li>
-        </ul>'
-      ),
-    ];
-
-    $sources = $this->config('makerspace_snapshot.sources')->get();
-    foreach ($sources as $key => $sql) {
-      $form['snapshot_sources'][$key] = [
-        '#type' => 'textarea',
-        '#title' => $key,
-        '#default_value' => $sql,
-        '#rows' => 10,
-      ];
-    }
 
     $form['existing_snapshots'] = [
       '#type' => 'details',
