@@ -17,6 +17,30 @@ makerspace_snapshot.api.org_level:
     parameters:
       snapshot_type:
         type: string
+
+makerspace_snapshot.download.org_level:
+  path: '/admin/config/makerspace/snapshot/download-org/{snapshot_id}'
+  defaults:
+    _controller: '\Drupal\makerspace_snapshot\Controller\SnapshotDownloadController::downloadOrgLevelData'
+    _title: 'Download Org Level Data'
+  requirements:
+    _permission: 'administer site configuration'
+  options:
+    parameters:
+      snapshot_id:
+        type: integer
+
+makerspace_snapshot.download.plan_level:
+  path: '/admin/config/makerspace/snapshot/download-plan/{snapshot_id}'
+  defaults:
+    _controller: '\Drupal\makerspace_snapshot\Controller\SnapshotDownloadController::downloadPlanLevelData'
+    _title: 'Download Plan Level Data'
+  requirements:
+    _permission: 'administer site configuration'
+  options:
+    parameters:
+      snapshot_id:
+        type: integer
 makerspace_snapshot.sources:
   path: '/admin/config/makerspace/snapshot/sql'
   defaults:
