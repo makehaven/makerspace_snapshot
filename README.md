@@ -10,6 +10,7 @@ The Makerspace Snapshot module is a Drupal module designed to capture and store 
 - **Configurable SQL Queries:** Define the SQL queries used to generate snapshot data, allowing the module to be adapted to any database schema.
 - **API Endpoints:** Exposes a set of API endpoints for retrieving snapshot data in a format suitable for dashboard consumption.
 - **Data Seeding:**  Includes a data seeding mechanism to provide sample data on a fresh installation.
+- **KPI Storage:** Persists any KPI values returned by `hook_makerspace_snapshot_collect_kpi()` into the `ms_fact_kpi_snapshot` table so dashboards can source metrics directly from snapshots.
 
 ## Installation
 
@@ -47,3 +48,7 @@ The module relies on a set of SQL views to retrieve the data for snapshots. You 
 ## Development
 
 Contributions and improvements to this module are welcome. Please refer to the `AGENTS.md` file for technical guidance on the module's architecture and development patterns.
+
+### Adding KPI Metrics
+
+Implement `hook_makerspace_snapshot_collect_kpi()` in your module to push additional KPI values into the snapshot pipeline. The hook receives the snapshot context (dates, membership counts, etc.) and should return an array keyed by KPI machine name. Each entry can be a scalar value or an array with optional `period_year`, `period_month`, and `meta` overrides. Captured metrics are stored in `ms_fact_kpi_snapshot` and are immediately consumable by the makerspace dashboard services.

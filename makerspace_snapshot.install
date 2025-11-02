@@ -56,6 +56,30 @@ function makerspace_snapshot_schema() {
     ],
   ];
 
+  $schema['ms_fact_kpi_snapshot'] = [
+    'description' => 'KPI values captured during snapshot runs.',
+    'fields' => [
+      'id' => ['type' => 'serial', 'not null' => TRUE],
+      'snapshot_id' => ['type' => 'int', 'not null' => TRUE],
+      'kpi_id' => ['type' => 'varchar', 'length' => 191, 'not null' => TRUE],
+      'metric_value' => ['type' => 'numeric', 'precision' => 20, 'scale' => 6, 'not null' => FALSE],
+      'period_year' => ['type' => 'int', 'size' => 'small', 'not null' => FALSE],
+      'period_month' => ['type' => 'int', 'size' => 'tiny', 'not null' => FALSE],
+      'meta' => ['type' => 'blob', 'size' => 'big', 'not null' => FALSE, 'serialize' => TRUE],
+    ],
+    'primary key' => ['id'],
+    'indexes' => [
+      'snapshot_kpi' => ['snapshot_id', 'kpi_id'],
+      'kpi_period' => ['kpi_id', 'period_year', 'period_month'],
+    ],
+    'foreign keys' => [
+      'snapshot_reference' => [
+        'table' => 'ms_snapshot',
+        'columns' => ['snapshot_id' => 'id'],
+      ],
+    ],
+  ];
+
   return $schema;
 }
 
@@ -168,6 +192,19 @@ function makerspace_snapshot_update_10002() {
 }
 
 /**
+ * Add KPI snapshot fact table.
+ */
+function makerspace_snapshot_update_10004() {
+  $connection = \Drupal::database();
+  $schema = $connection->schema();
+
+  $definition = makerspace_snapshot_schema()['ms_fact_kpi_snapshot'];
+  if (!$schema->tableExists('ms_fact_kpi_snapshot')) {
+    $schema->createTable('ms_fact_kpi_snapshot', $definition);
+  }
+}
+
+/**
  * Implements hook_install().
  */
 function makerspace_snapshot_install() {
@@ -211,6 +248,15 @@ function makerspace_snapshot_install() {
           'plan_code' => 'DIS',
           'plan_label' => 'Discount',
           'count_members' => 120,
+        ])->execute();
+
+      $connection->insert('ms_fact_kpi_snapshot')
+        ->fields([
+          'snapshot_id' => $snapshot_id,
+          'kpi_id' => 'total_active_members',
+          'metric_value' => 700,
+          'period_year' => (int) date('Y', strtotime($snapshot_date)),
+          'period_month' => (int) date('n', strtotime($snapshot_date)),
         ])->execute();
     }
   }

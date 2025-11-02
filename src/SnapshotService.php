@@ -2,9 +2,10 @@
 
 namespace Drupal\makerspace_snapshot;
 
-use Drupal\Core\Database\Connection;
 use Psr\Log\LoggerInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Database\Connection;
+use Drupal\Core\Extension\ModuleHandlerInterface;
 
 /**
  * Service description.
@@ -33,6 +34,13 @@ class SnapshotService {
   protected $configFactory;
 
   /**
+   * The module handler.
+   *
+   * @var \Drupal\Core\Extension\ModuleHandlerInterface
+   */
+  protected ModuleHandlerInterface $moduleHandler;
+
+  /**
    * Constructs a new SnapshotService object.
    *
    * @param \Drupal\Core\Database\Connection $database
@@ -41,11 +49,14 @@ class SnapshotService {
    *   The logger.
    * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
    *   The config factory.
+   * @param \Drupal\Core\Extension\ModuleHandlerInterface $module_handler
+   *   The module handler.
    */
-  public function __construct(Connection $database, LoggerInterface $logger, ConfigFactoryInterface $config_factory) {
+  public function __construct(Connection $database, LoggerInterface $logger, ConfigFactoryInterface $config_factory, ModuleHandlerInterface $module_handler) {
     $this->database = $database;
     $this->logger = $logger;
     $this->configFactory = $config_factory;
+    $this->moduleHandler = $module_handler;
   }
 
   /**
@@ -151,6 +162,25 @@ class SnapshotService {
           ])->execute();
       }
 
+      $kpiContext = [
+        'snapshot_id' => $snapshot_id,
+        'snapshot_type' => $snapshot_type,
+        'snapshot_date' => $snapshotDate,
+        'period_start' => $periodStart,
+        'period_end' => $periodEnd,
+        'members_active' => $members_active,
+        'members_paused' => $members_paused,
+        'members_lapsed' => $members_lapsed,
+        'joins' => $joins_count,
+        'cancels' => $cancels_count,
+        'net_change' => $net_change,
+        'is_test' => $isTest,
+      ];
+      $kpiValues = $this->collectKpiMetrics($kpiContext);
+      if (!empty($kpiValues)) {
+        $this->storeKpiMetrics($snapshot_id, $snapshotDate, $kpiValues);
+      }
+
       $this->logger->info("Snapshot stored for {$snapshotDate} (ID: {$snapshot_id})");
 
       $this->pruneSnapshots();
@@ -196,5 +226,114 @@ class SnapshotService {
       ->execute();
 
     $this->logger->info('Pruned @count snapshots older than @date.', ['@count' => count($snapshot_ids), '@date' => $retention_date]);
+  }
+
+  /**
+   * Collects KPI metrics from subscriber modules.
+   *
+   * @param array $context
+   *   Contextual data describing the snapshot in progress.
+   *
+   * @return array
+   *   An array keyed by KPI ID containing arrays with at least a 'value' key.
+   */
+  protected function collectKpiMetrics(array $context): array {
+    $results = $this->moduleHandler->invokeAll('makerspace_snapshot_collect_kpi', [$context]);
+    if (empty($results)) {
+      return [];
+    }
+
+    $metrics = [];
+    foreach ($results as $result) {
+      if (!is_array($result)) {
+        continue;
+      }
+      foreach ($result as $kpiId => $info) {
+        if (!is_string($kpiId) || $kpiId === '') {
+          continue;
+        }
+        $metrics[$kpiId] = $this->normalizeKpiMetric($info);
+      }
+    }
+
+    return array_filter($metrics, static function ($row) {
+      return $row !== NULL && isset($row['value']);
+    });
+  }
+
+  /**
+   * Persists collected KPI metrics for the snapshot.
+   */
+  protected function storeKpiMetrics(int $snapshot_id, string $snapshotDate, array $metrics): void {
+    $snapshotDateObj = \DateTimeImmutable::createFromFormat('Y-m-d', $snapshotDate) ?: new \DateTimeImmutable();
+    $defaultYear = (int) $snapshotDateObj->format('Y');
+    $defaultMonth = (int) $snapshotDateObj->format('m');
+
+    $this->database->delete('ms_fact_kpi_snapshot')
+      ->condition('snapshot_id', $snapshot_id)
+      ->execute();
+
+    foreach ($metrics as $kpiId => $info) {
+      if (!isset($info['value'])) {
+        continue;
+      }
+      $value = $info['value'];
+      $periodYear = isset($info['period_year']) ? (int) $info['period_year'] : $defaultYear;
+      $periodMonth = isset($info['period_month']) ? (int) $info['period_month'] : $defaultMonth;
+      $meta = $info['meta'] ?? [];
+
+      $fields = [
+        'snapshot_id' => $snapshot_id,
+        'kpi_id' => $kpiId,
+        'metric_value' => is_numeric($value) ? (float) $value : $value,
+        'period_year' => $periodYear ?: NULL,
+        'period_month' => $periodMonth ?: NULL,
+        'meta' => !empty($meta) ? $meta : NULL,
+      ];
+
+      $this->database->insert('ms_fact_kpi_snapshot')
+        ->fields($fields)
+        ->execute();
+    }
+
+    $tags = ['makerspace_snapshot:kpi'];
+    foreach (array_keys($metrics) as $kpiId) {
+      $tags[] = 'makerspace_snapshot:kpi:' . $kpiId;
+    }
+    cache_tags_invalidate($tags);
+  }
+
+  /**
+   * Normalizes a KPI metric row.
+   *
+   * @param mixed $info
+   *   The raw info returned by a hook subscriber.
+   *
+   * @return array|null
+   *   Normalized metric info or NULL if it cannot be parsed.
+   */
+  protected function normalizeKpiMetric($info): ?array {
+    if (is_scalar($info)) {
+      return ['value' => $info];
+    }
+
+    if (!is_array($info) || !isset($info['value'])) {
+      return NULL;
+    }
+
+    $row = [
+      'value' => $info['value'],
+    ];
+    if (isset($info['period_year'])) {
+      $row['period_year'] = (int) $info['period_year'];
+    }
+    if (isset($info['period_month'])) {
+      $row['period_month'] = (int) $info['period_month'];
+    }
+    if (isset($info['meta']) && is_array($info['meta'])) {
+      $row['meta'] = $info['meta'];
+    }
+
+    return $row;
   }
 }
