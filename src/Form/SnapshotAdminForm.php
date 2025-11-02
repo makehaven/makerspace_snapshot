@@ -9,6 +9,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 use Drupal\makerspace_snapshot\SnapshotService;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Url;
+use Drupal\file\Entity\File;
 
 /**
  * Defines a form that configures makerspace_snapshot settings.
@@ -79,59 +80,15 @@ class SnapshotAdminForm extends ConfigFormBase {
       '#markup' => '<p>This page allows you to configure and manually trigger snapshots of your website data. You can edit the <a href="/admin/config/makerspace/snapshot/sql">Snapshot SQL Queries</a> on a dedicated configuration page.</p>',
     ];
 
-    $form['config_preview'] = [
-      '#type' => 'details',
-      '#title' => $this->t('Loaded Configurations'),
-      '#open' => TRUE,
-    ];
-
-    $settings = $this->config('makerspace_snapshot.settings');
-    $enabled_types = $settings->get('enabled_snapshot_types');
-    if (!is_array($enabled_types)) {
-        $enabled_types = $enabled_types ? [$enabled_types] : [];
-    }
-    $form['config_preview']['settings'] = [
-      '#type' => 'item',
-      '#title' => $this->t('Settings'),
-      '#markup' => 'Interval: ' . $settings->get('interval') . '<br>' .
-                   'Enabled Types: ' . implode(', ', $enabled_types) . '<br>' .
-                   'Retention (months): ' . $settings->get('retention_window_months'),
-    ];
-
-    $metrics = $this->config('makerspace_snapshot.org_metrics')->get('metrics');
-    $metric_list = '<ul>';
-    if (is_array($metrics)) {
-      foreach ($metrics as $metric) {
-        $metric_list .= '<li>' . $metric['label'] . ' (' . $metric['id'] . ')</li>';
-      }
-    }
-    $metric_list .= '</ul>';
-    $form['config_preview']['org_metrics'] = [
-      '#type' => 'item',
-      '#title' => $this->t('Org Metrics'),
-      '#markup' => $metric_list,
-    ];
-
-    $plans = $this->config('makerspace_snapshot.plan_levels')->get('plan_levels');
-    $plan_list = '<ul>';
-    if (empty($plans)) {
-      $plan_list = '<p>No plan levels configured.</p>';
-    } else {
-      foreach ($plans as $plan) {
-        $plan_list .= '<li>' . $plan['label'] . ' (' . $plan['code'] . ')</li>';
-      }
-      $plan_list .= '</ul>';
-    }
-    $form['config_preview']['plan_levels'] = [
-      '#type' => 'item',
-      '#title' => $this->t('Plan Levels'),
-      '#markup' => $plan_list,
+    $form['tabs'] = [
+      '#type' => 'vertical_tabs',
+      '#default_tab' => 'edit-manual-snapshot',
     ];
 
     $form['manual_snapshot'] = [
       '#type' => 'details',
       '#title' => $this->t('Manual Snapshot'),
-      '#open' => TRUE,
+      '#group' => 'tabs',
     ];
 
     $form['manual_snapshot']['snapshot_type'] = [
@@ -159,14 +116,76 @@ class SnapshotAdminForm extends ConfigFormBase {
       '#submit' => ['::submitManualSnapshot'],
     ];
 
+    $form['import_snapshot'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Import Snapshot'),
+      '#group' => 'tabs',
+    ];
+
+    $form['import_snapshot']['snapshot_date'] = [
+      '#type' => 'date',
+      '#title' => $this->t('Snapshot Date'),
+      '#required' => TRUE,
+    ];
+
+    $form['import_snapshot']['import_schedule'] = [
+      '#type' => 'select',
+      '#title' => $this->t('Snapshot Schedule'),
+      '#options' => [
+        'monthly' => $this->t('Monthly'),
+        'quarterly' => $this->t('Quarterly'),
+        'annually' => $this->t('Annually'),
+        'daily' => $this->t('Daily'),
+        'manual' => $this->t('Manual'),
+      ],
+      '#default_value' => 'manual',
+    ];
+
+    $form['import_snapshot']['import_is_test'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Is this a test snapshot?'),
+    ];
+
+    $form['import_snapshot']['membership_totals_csv'] = [
+      '#type' => 'managed_file',
+      '#title' => $this->t('Membership Totals CSV'),
+      '#upload_validators' => ['file_validate_extensions' => ['csv']],
+    ];
+
+    $form['import_snapshot']['membership_activity_csv'] = [
+      '#type' => 'managed_file',
+      '#title' => $this->t('Membership Activity CSV'),
+      '#upload_validators' => ['file_validate_extensions' => ['csv']],
+    ];
+
+    $form['import_snapshot']['event_registrations_csv'] = [
+      '#type' => 'managed_file',
+      '#title' => $this->t('Event Registrations CSV'),
+      '#upload_validators' => ['file_validate_extensions' => ['csv']],
+    ];
+
+    $form['import_snapshot']['plan_csv'] = [
+      '#type' => 'managed_file',
+      '#title' => $this->t('Plan CSV'),
+      '#upload_validators' => ['file_validate_extensions' => ['csv']],
+    ];
+
+    $form['import_snapshot']['submit'] = [
+      '#type' => 'submit',
+      '#value' => $this->t('Import Snapshot'),
+      '#submit' => ['::submitImportSnapshot'],
+      '#validate' => ['::validateImportSnapshot'],
+    ];
+
     $form['existing_snapshots'] = [
       '#type' => 'details',
       '#title' => $this->t('Existing Snapshots'),
-      '#open' => TRUE,
+      '#group' => 'tabs',
     ];
 
     $header = [
       'snapshot_id' => $this->t('ID'),
+      'definition' => $this->t('Definition'),
       'snapshot_type' => $this->t('Type'),
       'snapshot_date' => $this->t('Date'),
       'is_test' => $this->t('Is Test?'),
@@ -184,6 +203,7 @@ class SnapshotAdminForm extends ConfigFormBase {
       foreach ($snapshots as $snapshot) {
         $rows[$snapshot->id] = [
           'snapshot_id' => $snapshot->id,
+          'definition' => $snapshot->definition,
           'snapshot_type' => $snapshot->snapshot_type,
           'snapshot_date' => $snapshot->snapshot_date,
           'is_test' => $snapshot->is_test ? $this->t('Yes') : $this->t('No'),
@@ -232,46 +252,181 @@ class SnapshotAdminForm extends ConfigFormBase {
    * {@inheritdoc}
    */
   public function submitForm(array &$form, FormStateInterface $form_state) {
-    $config = $this->config('makerspace_snapshot.sources');
-    $values = $form_state->getValue('snapshot_sources');
-    if (is_array($values)) {
-        foreach ($values as $key => $value) {
-            $config->set($key, $value);
-        }
-    }
-    $config->save();
-
-    parent::submitForm($form, $form_state);
+    // This is handled by the custom submit handlers.
   }
 
-  /**
-   * Custom submit handler for the manual snapshot button.
-   */
-    public function submitManualSnapshot(array &$form, FormStateInterface $form_state) {
-        $snapshotType = $form_state->getValue('snapshot_type');
-        $isTest = $form_state->getValue('is_test');
+  public function submitManualSnapshot(array &$form, FormStateInterface $form_state) {
+    $snapshotType = $form_state->getValue('snapshot_type');
+    $isTest = $form_state->getValue('is_test');
 
-        $this->snapshotService->takeSnapshot($snapshotType, $isTest);
-        $this->messenger()->addMessage($this->t('Snapshot of type %type has been taken.', ['%type' => $snapshotType]));
+    $this->snapshotService->takeSnapshot($snapshotType, $isTest);
+    $this->messenger()->addMessage($this->t('Snapshot of type %type has been taken.', ['%type' => $snapshotType]));
+  }
+
+  public function submitImportSnapshot(array &$form, FormStateInterface $form_state) {
+    $import_data = $form_state->get('import_snapshot_data');
+    foreach ($import_data as $definition => $data) {
+      $this->snapshotService->importSnapshot(
+        $definition,
+        $form_state->getValue('import_schedule'),
+        $form_state->getValue('snapshot_date'),
+        $form_state->getValue('import_is_test'),
+        $data
+      );
+    }
+    $this->messenger()->addMessage($this->t('The snapshot has been imported.'));
+    $this->cleanupUploadedFiles($form_state);
+  }
+
+  public function validateImportSnapshot(array &$form, FormStateInterface $form_state) {
+    $snapshot_date = $form_state->getValue('snapshot_date');
+    $import_data = [];
+
+    // Check for duplicate imports.
+    $query = $this->database->select('ms_snapshot', 's');
+    $query->fields('s', ['id']);
+    $query->condition('snapshot_date', $snapshot_date);
+    $results = $query->execute()->fetchAll();
+    if (count($results) > 0) {
+        $form_state->setErrorByName('snapshot_date', $this->t('A snapshot for this date already exists.'));
     }
 
-  /**
-   * Custom submit handler for deleting a snapshot.
-   */
-    public function submitDeleteSnapshot(array &$form, FormStateInterface $form_state) {
-        $snapshot_id = $form_state->getTriggeringElement()['#attributes']['snapshot-id'];
-
-        if ($snapshot_id) {
-            $this->database->delete('ms_snapshot')
-                ->condition('id', $snapshot_id)
-                ->execute();
-            $this->database->delete('ms_fact_org_snapshot')
-                ->condition('snapshot_id', $snapshot_id)
-                ->execute();
-            $this->database->delete('ms_fact_plan_snapshot')
-                ->condition('snapshot_id', $snapshot_id)
-                ->execute();
-            $this->messenger()->addMessage($this->t('Snapshot with ID %id has been deleted.', ['%id' => $snapshot_id]));
+    // Membership Totals
+    if ($file_id = $form_state->getValue(['membership_totals_csv', 0])) {
+      $data = $this->extractCsvData($file_id, ['snapshot_date', 'members_active', 'members_paused', 'members_lapsed']);
+      foreach ($data as $row) {
+        if ($row['snapshot_date'] !== $snapshot_date) {
+          $form_state->setErrorByName('membership_totals_csv', $this->t('The snapshot date in the membership totals CSV does not match the selected snapshot date.'));
         }
+        if (!is_numeric($row['members_active']) || !is_numeric($row['members_paused']) || !is_numeric($row['members_lapsed'])) {
+            $form_state->setErrorByName('membership_totals_csv', $this->t('The membership totals CSV contains non-numeric values.'));
+        }
+      }
+      $import_data['membership_totals']['totals'] = $data[0];
     }
+
+    // Membership Activity
+    if ($file_id = $form_state->getValue(['membership_activity_csv', 0])) {
+      $data = $this->extractCsvData($file_id, ['snapshot_date', 'joins', 'cancels', 'net_change']);
+      foreach ($data as $row) {
+        if ($row['snapshot_date'] !== $snapshot_date) {
+          $form_state->setErrorByName('membership_activity_csv', $this->t('The snapshot date in the membership activity CSV does not match the selected snapshot date.'));
+        }
+        if (!is_numeric($row['joins']) || !is_numeric($row['cancels']) || !is_numeric($row['net_change'])) {
+            $form_state->setErrorByName('membership_activity_csv', $this->t('The membership activity CSV contains non-numeric values.'));
+        }
+      }
+      $import_data['membership_activity']['activity'] = $data[0];
+    }
+
+    // Plan Data
+    if ($file_id = $form_state->getValue(['plan_csv', 0])) {
+        $data = $this->extractCsvData($file_id, ['snapshot_date', 'plan_code', 'plan_label', 'count_members']);
+        $plan_codes = [];
+        foreach ($data as $row) {
+            if ($row['snapshot_date'] !== $snapshot_date) {
+                $form_state->setErrorByName('plan_csv', $this->t('The snapshot date in the plan CSV does not match the selected snapshot date.'));
+            }
+            if (!is_numeric($row['count_members'])) {
+                $form_state->setErrorByName('plan_csv', $this->t('The plan CSV contains non-numeric values.'));
+            }
+            if (in_array($row['plan_code'], $plan_codes)) {
+                $form_state->setErrorByName('plan_csv', $this->t('The plan CSV contains duplicate plan codes.'));
+            }
+            $plan_codes[] = $row['plan_code'];
+        }
+        $import_data['membership_totals']['plans'] = $data;
+    }
+
+    // Event Registrations
+    if ($file_id = $form_state->getValue(['event_registrations_csv', 0])) {
+      $data = $this->extractCsvData($file_id, ['snapshot_date', 'event_id', 'event_title', 'event_start_date', 'registration_count']);
+      foreach ($data as $row) {
+        if ($row['snapshot_date'] !== $snapshot_date) {
+          $form_state->setErrorByName('event_registrations_csv', $this->t('The snapshot date in the event registrations CSV does not match the selected snapshot date.'));
+        }
+        if (!is_numeric($row['event_id']) || !is_numeric($row['registration_count'])) {
+            $form_state->setErrorByName('event_registrations_csv', $this->t('The event registrations CSV contains non-numeric values.'));
+        }
+      }
+      $import_data['event_registrations']['events'] = $data;
+    }
+
+    $form_state->set('import_snapshot_data', $import_data);
+  }
+
+  protected function extractCsvData($file_id, array $expected_headers) {
+    $file = File::load($file_id);
+    $file_path = $file->getFileUri();
+    return $this->parseCsvFile($file_path, $expected_headers);
+  }
+
+  protected function parseCsvFile($file_path, array $expected_headers) {
+    $handle = fopen($file_path, 'r');
+    if (!$handle) {
+      throw new \Exception("Could not open the file: {$file_path}");
+    }
+
+    // Strip UTF-8 BOM.
+    if (fgets($handle, 4) !== "\xef\xbb\xbf") {
+      rewind($handle);
+    }
+
+    $header = fgetcsv($handle);
+    if ($header !== $expected_headers) {
+      throw new \Exception('The CSV file has an invalid header.');
+    }
+
+    $data = [];
+    while (($row = fgetcsv($handle)) !== FALSE) {
+      if (!array_filter($row)) {
+        continue;
+      }
+      $data[] = array_combine($header, $row);
+    }
+
+    fclose($handle);
+    return $data;
+  }
+
+  protected function cleanupUploadedFiles(FormStateInterface $form_state) {
+      $file_inputs = [
+          'membership_totals_csv',
+          'membership_activity_csv',
+          'event_registrations_csv',
+          'plan_csv',
+      ];
+
+      foreach ($file_inputs as $input) {
+          if ($file_id = $form_state->getValue([$input, 0])) {
+              $file = File::load($file_id);
+              if ($file) {
+                  $file->delete();
+              }
+          }
+      }
+  }
+
+  public function submitDeleteSnapshot(array &$form, FormStateInterface $form_state) {
+    $snapshot_id = $form_state->getTriggeringElement()['#attributes']['snapshot-id'];
+
+    if ($snapshot_id) {
+        $this->database->delete('ms_snapshot')
+            ->condition('id', $snapshot_id)
+            ->execute();
+        $this->database->delete('ms_fact_org_snapshot')
+            ->condition('snapshot_id', $snapshot_id)
+            ->execute();
+        $this->database->delete('ms_fact_plan_snapshot')
+            ->condition('snapshot_id', $snapshot_id)
+            ->execute();
+        $this->database->delete('ms_fact_membership_activity')
+            ->condition('snapshot_id', $snapshot_id)
+            ->execute();
+        $this->database->delete('ms_fact_event_snapshot')
+            ->condition('snapshot_id', $snapshot_id)
+            ->execute();
+        $this->messenger()->addMessage($this->t('Snapshot with ID %id has been deleted.', ['%id' => $snapshot_id]));
+    }
+  }
 }

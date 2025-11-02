@@ -17,6 +17,7 @@ function makerspace_snapshot_schema() {
     'description' => 'Snapshot metadata.',
     'fields' => [
       'id' => ['type' => 'serial', 'not null' => TRUE],
+      'definition' => ['type' => 'varchar', 'length' => 255, 'not null' => TRUE],
       'snapshot_type' => ['type' => 'varchar', 'length' => 255, 'not null' => TRUE],
       'snapshot_date' => ['type' => 'varchar', 'length' => 10, 'not null' => TRUE], // YYYY-MM-01
       'is_test' => ['type' => 'int', 'size' => 'tiny', 'not null' => TRUE, 'default' => 0],
@@ -25,6 +26,7 @@ function makerspace_snapshot_schema() {
     'primary key' => ['id'],
     'indexes' => [
       'type_date' => ['snapshot_type', 'snapshot_date'],
+      'definition' => ['definition'],
     ],
   ];
 
@@ -54,6 +56,29 @@ function makerspace_snapshot_schema() {
     'indexes' => [
       'plan_code_idx' => ['plan_code'],
     ],
+  ];
+
+  $schema['ms_fact_membership_activity'] = [
+    'description' => 'Membership activity metrics.',
+    'fields' => [
+      'snapshot_id' => ['type' => 'int', 'not null' => TRUE],
+      'joins'          => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'cancels'        => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'net_change'     => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+    ],
+    'primary key' => ['snapshot_id'],
+  ];
+
+  $schema['ms_fact_event_snapshot'] = [
+    'description' => 'Event registration metrics.',
+    'fields' => [
+      'snapshot_id' => ['type' => 'int', 'not null' => TRUE],
+      'event_id' => ['type' => 'int', 'not null' => TRUE],
+      'event_title' => ['type' => 'varchar', 'length' => 255, 'not null' => TRUE],
+      'event_start_date' => ['type' => 'varchar', 'length' => 255, 'not null' => TRUE],
+      'registration_count' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+    ],
+    'primary key' => ['snapshot_id', 'event_id'],
   ];
 
   return $schema;
@@ -231,5 +256,31 @@ function makerspace_snapshot_update_10003() {
 
   if ($schema->tableExists('ms_snapshot')) {
     $schema->addIndex('ms_snapshot', 'type_date', ['snapshot_type', 'snapshot_date']);
+  }
+}
+
+/**
+ * Add new tables and definition field for import functionality.
+ */
+function makerspace_snapshot_update_10004() {
+  $connection = \Drupal::database();
+  $schema = $connection->schema();
+  $new_schema = makerspace_snapshot_schema();
+
+  if (!$schema->tableExists('ms_fact_membership_activity')) {
+    $schema->createTable('ms_fact_membership_activity', $new_schema['ms_fact_membership_activity']);
+  }
+
+  if (!$schema->tableExists('ms_fact_event_snapshot')) {
+    $schema->createTable('ms_fact_event_snapshot', $new_schema['ms_fact_event_snapshot']);
+  }
+
+  if ($schema->tableExists('ms_snapshot') && !$schema->fieldExists('ms_snapshot', 'definition')) {
+    $schema->addField('ms_snapshot', 'definition', [
+      'type' => 'varchar',
+      'length' => 255,
+      'not null' => TRUE,
+      'default' => 'membership_totals',
+    ]);
   }
 }

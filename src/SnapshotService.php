@@ -48,6 +48,26 @@ class SnapshotService {
     $this->configFactory = $config_factory;
   }
 
+  public function buildDefinitions() {
+    return [
+      'membership_totals' => [
+        'schedules' => ['monthly', 'quarterly', 'annually'],
+        'headers' => ['snapshot_date', 'members_active', 'members_paused', 'members_lapsed'],
+        'dataset_type' => 'membership_totals',
+      ],
+      'membership_activity' => [
+        'schedules' => ['monthly', 'quarterly', 'annually'],
+        'headers' => ['snapshot_date', 'joins', 'cancels', 'net_change'],
+        'dataset_type' => 'membership_activity',
+      ],
+      'event_registrations' => [
+        'schedules' => ['daily'],
+        'headers' => ['snapshot_date', 'event_id', 'event_title', 'event_start_date', 'registration_count'],
+        'dataset_type' => 'event_registrations',
+      ],
+    ];
+  }
+
   /**
    * Takes a snapshot.
    *
@@ -107,6 +127,7 @@ class SnapshotService {
       // Create snapshot metadata.
       $snapshot_id = $this->database->insert('ms_snapshot')
         ->fields([
+          'definition'    => 'membership_totals',
           'snapshot_type' => $snapshot_type,
           'snapshot_date' => $snapshotDate,
           'is_test'       => $isTest,
@@ -125,9 +146,18 @@ class SnapshotService {
           'members_active' => $members_active,
           'members_paused' => $members_paused,
           'members_lapsed' => $members_lapsed,
-          'joins'          => $joins_count,
-          'cancels'        => $cancels_count,
-          'net_change'     => $net_change,
+          'joins'          => 0,
+          'cancels'        => 0,
+          'net_change'     => 0,
+        ])->execute();
+
+      // Insert membership activity.
+      $this->database->insert('ms_fact_membership_activity')
+        ->fields([
+          'snapshot_id' => $snapshot_id,
+          'joins'       => $joins_count,
+          'cancels'     => $cancels_count,
+          'net_change'  => $net_change,
         ])->execute();
 
       // Per-plan dynamic counts.
@@ -156,6 +186,88 @@ class SnapshotService {
       $this->pruneSnapshots();
     } catch (\Exception $e) {
       $this->logger->error('Error taking snapshot: @message', ['@message' => $e->getMessage()]);
+    }
+  }
+
+  public function importSnapshot($definition, $schedule, $snapshot_date, $is_test, array $payload) {
+    $definitions = $this->buildDefinitions();
+    if (!isset($definitions[$definition])) {
+      throw new \Exception("Invalid snapshot definition: {$definition}");
+    }
+
+    $snapshot_id = $this->database->insert('ms_snapshot')
+      ->fields([
+        'definition'    => $definition,
+        'snapshot_type' => $schedule,
+        'snapshot_date' => $snapshot_date,
+        'is_test'       => $is_test,
+        'created_at'    => time(),
+      ])->execute();
+
+    if (!$snapshot_id) {
+      throw new \Exception("Failed to create snapshot for {$snapshot_date}");
+    }
+
+    switch ($definition) {
+      case 'membership_totals':
+        $this->importMembershipSnapshot($snapshot_id, $payload);
+        break;
+      case 'membership_activity':
+        $this->importMembershipActivitySnapshot($snapshot_id, $payload);
+        break;
+      case 'event_registrations':
+        $this->importEventSnapshot($snapshot_id, $payload);
+        break;
+    }
+
+    return $snapshot_id;
+  }
+
+  protected function importMembershipSnapshot($snapshot_id, array $payload) {
+    $this->database->insert('ms_fact_org_snapshot')
+      ->fields([
+        'snapshot_id'    => $snapshot_id,
+        'members_active' => $payload['totals']['members_active'],
+        'members_paused' => $payload['totals']['members_paused'],
+        'members_lapsed' => $payload['totals']['members_lapsed'],
+        'joins'          => 0,
+        'cancels'        => 0,
+        'net_change'     => 0,
+      ])->execute();
+
+    if (isset($payload['plans'])) {
+      foreach ($payload['plans'] as $plan) {
+        $this->database->insert('ms_fact_plan_snapshot')
+          ->fields([
+            'snapshot_id'    => $snapshot_id,
+            'plan_code'      => $plan['plan_code'],
+            'plan_label'     => $plan['plan_label'],
+            'count_members'  => $plan['count_members'],
+          ])->execute();
+      }
+    }
+  }
+
+  protected function importMembershipActivitySnapshot($snapshot_id, array $payload) {
+    $this->database->insert('ms_fact_membership_activity')
+      ->fields([
+        'snapshot_id' => $snapshot_id,
+        'joins'       => $payload['activity']['joins'],
+        'cancels'     => $payload['activity']['cancels'],
+        'net_change'  => $payload['activity']['net_change'],
+      ])->execute();
+  }
+
+  protected function importEventSnapshot($snapshot_id, array $payload) {
+    foreach ($payload['events'] as $event) {
+      $this->database->insert('ms_fact_event_snapshot')
+        ->fields([
+          'snapshot_id'        => $snapshot_id,
+          'event_id'           => $event['event_id'],
+          'event_title'        => $event['event_title'],
+          'event_start_date'   => $event['event_start_date'],
+          'registration_count' => $event['registration_count'],
+        ])->execute();
     }
   }
 
