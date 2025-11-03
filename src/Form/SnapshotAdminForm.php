@@ -216,16 +216,16 @@ class SnapshotAdminForm extends ConfigFormBase {
                 ],
               ],
               'delete' => [
-                '#type' => 'submit',
+                '#type' => 'button',
                 '#value' => $this->t('Delete'),
-                '#name' => 'delete_' . $snapshot->id,
-                '#submit' => ['::submitDeleteSnapshot'],
-                '#limit_validation_errors' => [],
-                '#snapshot_id' => $snapshot->id,
-                '#attributes' => ['data-snapshot-id' => $snapshot->id],
+                '#attributes' => [
+                  'class' => ['snapshot-delete-button'],
+                  'data-snapshot-id' => $snapshot->id,
+                ],
               ],
             ]
           ],
+          '#attributes' => ['data-snapshot-id' => $snapshot->id],
         ];
       }
     }
@@ -235,6 +235,11 @@ class SnapshotAdminForm extends ConfigFormBase {
       '#header' => $header,
       '#rows' => $rows,
       '#empty' => $this->t('No snapshots found.'),
+      '#attached' => [
+        'library' => [
+          'makerspace_snapshot/snapshot-delete',
+        ],
+      ],
     ];
 
     return parent::buildForm($form, $form_state);
@@ -405,41 +410,5 @@ class SnapshotAdminForm extends ConfigFormBase {
               }
           }
       }
-  }
-
-  public function submitDeleteSnapshot(array &$form, FormStateInterface $form_state) {
-    $triggering_element = $form_state->getTriggeringElement();
-    $snapshot_id = $triggering_element['#snapshot_id'] ?? NULL;
-
-    if (!$snapshot_id && isset($triggering_element['#name'])) {
-      if (preg_match('/^delete[_-](\d+)$/', $triggering_element['#name'], $matches)) {
-        $snapshot_id = $matches[1];
-      }
-    }
-
-    if (!$snapshot_id) {
-      $this->messenger()->addError($this->t('Unable to determine which snapshot to delete.'));
-      return;
-    }
-
-    if ($snapshot_id) {
-        $this->database->delete('ms_snapshot')
-            ->condition('id', $snapshot_id)
-            ->execute();
-        $this->database->delete('ms_fact_org_snapshot')
-            ->condition('snapshot_id', $snapshot_id)
-            ->execute();
-        $this->database->delete('ms_fact_plan_snapshot')
-            ->condition('snapshot_id', $snapshot_id)
-            ->execute();
-        $this->database->delete('ms_fact_membership_activity')
-            ->condition('snapshot_id', $snapshot_id)
-            ->execute();
-        $this->database->delete('ms_fact_event_snapshot')
-            ->condition('snapshot_id', $snapshot_id)
-            ->execute();
-        $this->messenger()->addMessage($this->t('Snapshot with ID %id has been deleted.', ['%id' => $snapshot_id]));
-        $form_state->setRebuild(TRUE);
-    }
   }
 }

@@ -18,6 +18,15 @@ makerspace_snapshot.api.org_level:
       snapshot_type:
         type: string
 
+makerspace_snapshot.delete_snapshot_ajax:
+  path: '/admin/config/makerspace/snapshot/delete/{snapshot_id}'
+  defaults:
+    _controller: '\Drupal\makerspace_snapshot\Controller\SnapshotAdminController::deleteSnapshotAjax'
+    _title: 'Delete Snapshot'
+  requirements:
+    _permission: 'administer site configuration'
+  methods: [POST]
+
 makerspace_snapshot.safe_cache_clear:
   path: '/makerspace-snapshot/safe-cache-clear'
   defaults:
