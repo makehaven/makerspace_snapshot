@@ -218,9 +218,11 @@ class SnapshotAdminForm extends ConfigFormBase {
               'delete' => [
                 '#type' => 'submit',
                 '#value' => $this->t('Delete'),
-                '#name' => 'delete-' . $snapshot->id,
+                '#name' => 'delete_' . $snapshot->id,
                 '#submit' => ['::submitDeleteSnapshot'],
-                '#attributes' => ['snapshot-id' => $snapshot->id],
+                '#limit_validation_errors' => [],
+                '#snapshot_id' => $snapshot->id,
+                '#attributes' => ['data-snapshot-id' => $snapshot->id],
               ],
             ]
           ],
@@ -406,7 +408,19 @@ class SnapshotAdminForm extends ConfigFormBase {
   }
 
   public function submitDeleteSnapshot(array &$form, FormStateInterface $form_state) {
-    $snapshot_id = $form_state->getTriggeringElement()['#attributes']['snapshot-id'];
+    $triggering_element = $form_state->getTriggeringElement();
+    $snapshot_id = $triggering_element['#snapshot_id'] ?? NULL;
+
+    if (!$snapshot_id && isset($triggering_element['#name'])) {
+      if (preg_match('/^delete[_-](\d+)$/', $triggering_element['#name'], $matches)) {
+        $snapshot_id = $matches[1];
+      }
+    }
+
+    if (!$snapshot_id) {
+      $this->messenger()->addError($this->t('Unable to determine which snapshot to delete.'));
+      return;
+    }
 
     if ($snapshot_id) {
         $this->database->delete('ms_snapshot')
@@ -425,6 +439,7 @@ class SnapshotAdminForm extends ConfigFormBase {
             ->condition('snapshot_id', $snapshot_id)
             ->execute();
         $this->messenger()->addMessage($this->t('Snapshot with ID %id has been deleted.', ['%id' => $snapshot_id]));
+        $form_state->setRebuild(TRUE);
     }
   }
 }
