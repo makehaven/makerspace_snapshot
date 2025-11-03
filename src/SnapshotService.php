@@ -454,4 +454,42 @@ class SnapshotService {
 
     return $row;
   }
+
+  /**
+   * Deletes a snapshot and its associated data.
+   *
+   * @param int $snapshot_id
+   *   The ID of the snapshot to delete.
+   */
+  public function deleteSnapshot($snapshot_id) {
+    if (!$snapshot_id) {
+      throw new \InvalidArgumentException('Snapshot ID is required.');
+    }
+
+    $transaction = $this->database->startTransaction();
+    try {
+      $this->database->delete('ms_snapshot')
+        ->condition('id', $snapshot_id)
+        ->execute();
+      $this->database->delete('ms_fact_org_snapshot')
+        ->condition('snapshot_id', $snapshot_id)
+        ->execute();
+      $this->database->delete('ms_fact_plan_snapshot')
+        ->condition('snapshot_id', $snapshot_id)
+        ->execute();
+      $this->database->delete('ms_fact_membership_activity')
+        ->condition('snapshot_id', $snapshot_id)
+        ->execute();
+      $this->database->delete('ms_fact_event_snapshot')
+        ->condition('snapshot_id', $snapshot_id)
+        ->execute();
+
+      $this->logger->info('Deleted snapshot with ID @id.', ['@id' => $snapshot_id]);
+    }
+    catch (\Exception $e) {
+      $transaction->rollBack();
+      $this->logger->error('Error deleting snapshot with ID @id: @message', ['@id' => $snapshot_id, '@message' => $e->getMessage()]);
+      throw $e;
+    }
+  }
 }
