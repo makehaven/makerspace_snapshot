@@ -122,12 +122,6 @@ class SnapshotAdminForm extends ConfigFormBase {
       '#group' => 'tabs',
     ];
 
-    $form['import_snapshot']['snapshot_date'] = [
-      '#type' => 'date',
-      '#title' => $this->t('Snapshot Date'),
-      '#required' => TRUE,
-    ];
-
     $form['import_snapshot']['import_schedule'] = [
       '#type' => 'select',
       '#title' => $this->t('Snapshot Schedule'),
@@ -269,91 +263,85 @@ class SnapshotAdminForm extends ConfigFormBase {
 
   public function submitImportSnapshot(array &$form, FormStateInterface $form_state) {
     $import_data = $form_state->get('import_snapshot_data');
-    foreach ($import_data as $definition => $data) {
-      $this->snapshotService->importSnapshot(
-        $definition,
-        $form_state->getValue('import_schedule'),
-        $form_state->getValue('snapshot_date'),
-        $form_state->getValue('import_is_test'),
-        $data
-      );
+    foreach ($import_data as $date => $date_data) {
+      foreach ($date_data as $definition => $data) {
+        $this->snapshotService->importSnapshot(
+          $definition,
+          $form_state->getValue('import_schedule'),
+          $date,
+          $form_state->getValue('import_is_test'),
+          $data
+        );
+      }
     }
-    $this->messenger()->addMessage($this->t('The snapshot has been imported.'));
+    $this->messenger()->addMessage($this->t('The snapshot(s) have been imported.'));
     $this->cleanupUploadedFiles($form_state);
   }
 
   public function validateImportSnapshot(array &$form, FormStateInterface $form_state) {
-    $snapshot_date = $form_state->getValue('snapshot_date');
     $import_data = [];
-
-    // Check for duplicate imports.
-    $query = $this->database->select('ms_snapshot', 's');
-    $query->fields('s', ['id']);
-    $query->condition('snapshot_date', $snapshot_date);
-    $results = $query->execute()->fetchAll();
-    if (count($results) > 0) {
-        $form_state->setErrorByName('snapshot_date', $this->t('A snapshot for this date already exists.'));
-    }
+    $all_dates = [];
 
     // Membership Totals
     if ($file_id = $form_state->getValue(['membership_totals_csv', 0])) {
       $data = $this->extractCsvData($file_id, ['snapshot_date', 'members_active', 'members_paused', 'members_lapsed']);
       foreach ($data as $row) {
-        if ($row['snapshot_date'] !== $snapshot_date) {
-          $form_state->setErrorByName('membership_totals_csv', $this->t('The snapshot date in the membership totals CSV does not match the selected snapshot date.'));
-        }
         if (!is_numeric($row['members_active']) || !is_numeric($row['members_paused']) || !is_numeric($row['members_lapsed'])) {
-            $form_state->setErrorByName('membership_totals_csv', $this->t('The membership totals CSV contains non-numeric values.'));
+          $form_state->setErrorByName('membership_totals_csv', $this->t('The membership totals CSV contains non-numeric values.'));
         }
+        $import_data[$row['snapshot_date']]['membership_totals']['totals'] = $row;
+        $all_dates[] = $row['snapshot_date'];
       }
-      $import_data['membership_totals']['totals'] = $data[0];
     }
 
     // Membership Activity
     if ($file_id = $form_state->getValue(['membership_activity_csv', 0])) {
       $data = $this->extractCsvData($file_id, ['snapshot_date', 'joins', 'cancels', 'net_change']);
       foreach ($data as $row) {
-        if ($row['snapshot_date'] !== $snapshot_date) {
-          $form_state->setErrorByName('membership_activity_csv', $this->t('The snapshot date in the membership activity CSV does not match the selected snapshot date.'));
-        }
         if (!is_numeric($row['joins']) || !is_numeric($row['cancels']) || !is_numeric($row['net_change'])) {
-            $form_state->setErrorByName('membership_activity_csv', $this->t('The membership activity CSV contains non-numeric values.'));
+          $form_state->setErrorByName('membership_activity_csv', $this->t('The membership activity CSV contains non-numeric values.'));
         }
+        $import_data[$row['snapshot_date']]['membership_activity']['activity'] = $row;
+        $all_dates[] = $row['snapshot_date'];
       }
-      $import_data['membership_activity']['activity'] = $data[0];
     }
 
     // Plan Data
     if ($file_id = $form_state->getValue(['plan_csv', 0])) {
-        $data = $this->extractCsvData($file_id, ['snapshot_date', 'plan_code', 'plan_label', 'count_members']);
-        $plan_codes = [];
-        foreach ($data as $row) {
-            if ($row['snapshot_date'] !== $snapshot_date) {
-                $form_state->setErrorByName('plan_csv', $this->t('The snapshot date in the plan CSV does not match the selected snapshot date.'));
-            }
-            if (!is_numeric($row['count_members'])) {
-                $form_state->setErrorByName('plan_csv', $this->t('The plan CSV contains non-numeric values.'));
-            }
-            if (in_array($row['plan_code'], $plan_codes)) {
-                $form_state->setErrorByName('plan_csv', $this->t('The plan CSV contains duplicate plan codes.'));
-            }
-            $plan_codes[] = $row['plan_code'];
+      $data = $this->extractCsvData($file_id, ['snapshot_date', 'plan_code', 'plan_label', 'count_members']);
+      foreach ($data as $row) {
+        if (!is_numeric($row['count_members'])) {
+          $form_state->setErrorByName('plan_csv', $this->t('The plan CSV contains non-numeric values.'));
         }
-        $import_data['membership_totals']['plans'] = $data;
+        $import_data[$row['snapshot_date']]['membership_totals']['plans'][] = $row;
+      }
     }
 
     // Event Registrations
     if ($file_id = $form_state->getValue(['event_registrations_csv', 0])) {
-      $data = $this->extractCsvData($file_id, ['snapshot_date', 'event_id', 'event_title', 'event_start_date', 'registration_count']);
-      foreach ($data as $row) {
-        if ($row['snapshot_date'] !== $snapshot_date) {
-          $form_state->setErrorByName('event_registrations_csv', $this->t('The snapshot date in the event registrations CSV does not match the selected snapshot date.'));
+        $data = $this->extractCsvData($file_id, ['snapshot_date', 'event_id', 'event_title', 'event_start_date', 'registration_count']);
+        $event_dates = array_unique(array_column($data, 'snapshot_date'));
+        if (count($event_dates) > 1) {
+            $form_state->setErrorByName('event_registrations_csv', $this->t('The event registrations CSV can only contain data for a single date.'));
         }
-        if (!is_numeric($row['event_id']) || !is_numeric($row['registration_count'])) {
-            $form_state->setErrorByName('event_registrations_csv', $this->t('The event registrations CSV contains non-numeric values.'));
+        foreach ($data as $row) {
+            if (!is_numeric($row['event_id']) || !is_numeric($row['registration_count'])) {
+                $form_state->setErrorByName('event_registrations_csv', $this->t('The event registrations CSV contains non-numeric values.'));
+            }
         }
-      }
-      $import_data['event_registrations']['events'] = $data;
+        $import_data[$event_dates[0]]['event_registrations']['events'] = $data;
+        $all_dates[] = $event_dates[0];
+    }
+
+    // Check for duplicate imports.
+    $all_dates = array_unique($all_dates);
+    $query = $this->database->select('ms_snapshot', 's');
+    $query->fields('s', ['snapshot_date']);
+    $query->condition('snapshot_date', $all_dates, 'IN');
+    $results = $query->execute()->fetchAll();
+    if (count($results) > 0) {
+        $existing_dates = array_column($results, 'snapshot_date');
+        $form_state->setErrorByName('membership_totals_csv', $this->t('Snapshots for the following dates already exist: @dates', ['@dates' => implode(', ', $existing_dates)]));
     }
 
     $form_state->set('import_snapshot_data', $import_data);

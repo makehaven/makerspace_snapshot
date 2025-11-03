@@ -65,6 +65,11 @@ class SnapshotService {
         'headers' => ['snapshot_date', 'event_id', 'event_title', 'event_start_date', 'registration_count'],
         'dataset_type' => 'event_registrations',
       ],
+      'plan_levels' => [
+        'schedules' => [],
+        'headers' => ['snapshot_date', 'plan_code', 'plan_label', 'count_members'],
+        'dataset_type' => 'plan_levels',
+      ],
     ];
   }
 
