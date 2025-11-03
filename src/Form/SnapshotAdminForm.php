@@ -82,6 +82,7 @@ class SnapshotAdminForm extends ConfigFormBase {
       'definition' => (string) $request->query->get('definition', ''),
       'date' => (string) $request->query->get('date', ''),
     ];
+    $requested_tab = (string) $request->query->get('tab', '');
 
     $snapshot_type_form_options = [
       'monthly' => $this->t('Monthly'),
@@ -167,13 +168,21 @@ class SnapshotAdminForm extends ConfigFormBase {
       $active_filters['definition'] = '';
     }
 
+    if ($requested_tab === '' && array_filter($active_filters)) {
+      $requested_tab = 'existing_snapshots';
+    }
+    if ($requested_tab === '') {
+      $requested_tab = 'manual_snapshot';
+    }
+    $default_tab_id = 'edit-' . str_replace('_', '-', $requested_tab);
+
     $form['description'] = [
       '#markup' => '<p>' . $this->t('Use this page to configure and trigger snapshots. Reference the <strong>Snapshot SQL</strong> tab for the read-only queries that power each dataset.') . '</p>',
     ];
 
     $form['tabs'] = [
       '#type' => 'vertical_tabs',
-      '#default_tab' => 'edit-manual-snapshot',
+      '#default_tab' => $default_tab_id,
     ];
 
     $form['manual_snapshot'] = [
@@ -348,6 +357,54 @@ class SnapshotAdminForm extends ConfigFormBase {
       $snapshots = $query->execute();
 
       foreach ($snapshots as $snapshot) {
+        $download_links = [];
+        switch ($snapshot->definition) {
+          case 'membership_totals':
+            $download_links['org'] = [
+              'title' => $this->t('Download Membership Totals CSV'),
+              'url' => Url::fromRoute('makerspace_snapshot.download.org_level', ['snapshot_id' => $snapshot->id]),
+            ];
+            break;
+
+          case 'plan_levels':
+            $download_links['plan'] = [
+              'title' => $this->t('Download Plan Levels CSV'),
+              'url' => Url::fromRoute('makerspace_snapshot.download.plan_level', ['snapshot_id' => $snapshot->id]),
+            ];
+            break;
+
+          case 'membership_activity':
+            $download_links['activity'] = [
+              'title' => $this->t('Download Membership Activity CSV'),
+              'url' => Url::fromRoute('makerspace_snapshot.download.membership_activity', ['snapshot_id' => $snapshot->id]),
+            ];
+            break;
+        }
+
+        $operations = [
+          '#type' => 'container',
+          '#attributes' => ['class' => ['snapshot-operations']],
+        ];
+
+        if (!empty($download_links)) {
+          $operations['download'] = [
+            '#type' => 'dropbutton',
+            '#links' => $download_links,
+          ];
+        }
+
+        $operations['delete'] = [
+          '#type' => 'submit',
+          '#value' => $this->t('Delete'),
+          '#name' => 'delete_snapshot_' . $snapshot->id,
+          '#limit_validation_errors' => [],
+          '#attributes' => [
+            'class' => ['snapshot-delete-button'],
+            'data-snapshot-id' => $snapshot->id,
+          ],
+          '#snapshot_id' => $snapshot->id,
+        ];
+
         $rows[$snapshot->id] = [
           'snapshot_id' => $snapshot->id,
           'definition' => $this->formatDefinitionLabel($snapshot->definition ?? 'membership_totals'),
@@ -356,33 +413,7 @@ class SnapshotAdminForm extends ConfigFormBase {
           'source' => $this->formatSourceLabel($snapshot->source ?? ''),
           'created_at' => date('Y-m-d H:i:s', $snapshot->created_at),
           'operations' => [
-            'data' => [
-              '#type' => 'container',
-              'download_links' => [
-                '#type' => 'dropbutton',
-                '#links' => [
-                  'download_org_csv' => [
-                    'title' => $this->t('Download Org CSV'),
-                    'url' => Url::fromRoute('makerspace_snapshot.download.org_level', ['snapshot_id' => $snapshot->id]),
-                  ],
-                  'download_plan_csv' => [
-                    'title' => $this->t('Download Plan CSV'),
-                    'url' => Url::fromRoute('makerspace_snapshot.download.plan_level', ['snapshot_id' => $snapshot->id]),
-                  ],
-                ],
-              ],
-              'delete' => [
-                '#type' => 'submit',
-                '#value' => $this->t('Delete'),
-                '#name' => 'delete_snapshot_' . $snapshot->id,
-                '#limit_validation_errors' => [],
-                '#attributes' => [
-                  'class' => ['snapshot-delete-button'],
-                  'data-snapshot-id' => $snapshot->id,
-                ],
-                '#snapshot_id' => $snapshot->id,
-              ],
-            ]
+            'data' => $operations,
           ],
           '#attributes' => ['data-snapshot-id' => $snapshot->id],
         ];
@@ -479,16 +510,18 @@ class SnapshotAdminForm extends ConfigFormBase {
     ];
 
     if ($trigger_name === 'snapshot_filter_reset') {
-      $form_state->setRedirect('makerspace_snapshot.admin');
+      $form_state->setRedirect('makerspace_snapshot.admin', [], [
+        'query' => ['tab' => 'existing_snapshots'],
+      ]);
       return;
     }
 
     if ($trigger_name === 'snapshot_filter_apply') {
-      $form_state->setRedirect('makerspace_snapshot.admin', [], [
-        'query' => array_filter($current_filters, static function ($value) {
-          return $value !== NULL && $value !== '';
-        }),
-      ]);
+      $query = array_filter($current_filters, static function ($value) {
+        return $value !== NULL && $value !== '';
+      });
+      $query['tab'] = 'existing_snapshots';
+      $form_state->setRedirect('makerspace_snapshot.admin', [], ['query' => $query]);
       return;
     }
 
@@ -541,8 +574,10 @@ class SnapshotAdminForm extends ConfigFormBase {
       '%type' => $snapshotType,
       '%definitions' => implode(', ', $definition_labels),
     ]));
+    $query = $this->buildFilterQueryFromRequest();
+    $query['tab'] = 'manual_snapshot';
     $form_state->setRedirect('makerspace_snapshot.admin', [], [
-      'query' => $this->buildFilterQueryFromRequest(),
+      'query' => $query,
     ]);
   }
 
@@ -550,14 +585,18 @@ class SnapshotAdminForm extends ConfigFormBase {
     try {
       $this->snapshotService->deleteSnapshot($snapshot_id);
       $this->messenger()->addStatus($this->t('Snapshot with ID %id has been deleted.', ['%id' => $snapshot_id]));
+      $query = $this->buildFilterQueryFromRequest();
+      $query['tab'] = 'existing_snapshots';
       $form_state->setRedirect('makerspace_snapshot.admin', [], [
-        'query' => $this->buildFilterQueryFromRequest(),
+        'query' => $query,
       ]);
     }
     catch (\Exception $e) {
       $this->messenger()->addError($this->t('An error occurred while deleting the snapshot.'));
+      $query = $this->buildFilterQueryFromRequest();
+      $query['tab'] = 'existing_snapshots';
       $form_state->setRedirect('makerspace_snapshot.admin', [], [
-        'query' => $this->buildFilterQueryFromRequest(),
+        'query' => $query,
       ]);
     }
   }
@@ -626,6 +665,7 @@ class SnapshotAdminForm extends ConfigFormBase {
       'type' => $request->query->get('type'),
       'definition' => $request->query->get('definition'),
       'date' => $request->query->get('date'),
+      'tab' => $request->query->get('tab'),
     ];
 
     return array_filter($query, static function ($value) {

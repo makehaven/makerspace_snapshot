@@ -74,4 +74,31 @@ class SnapshotDownloadController extends ControllerBase {
 
     return $response;
   }
+
+  public function downloadMembershipActivityData($snapshot_id) {
+    $response = new StreamedResponse(function() use ($snapshot_id) {
+      $handle = fopen('php://output', 'r+');
+
+      $header = ['snapshot_date', 'joins', 'cancels', 'net_change'];
+      fputcsv($handle, $header);
+
+      $query = $this->database->select('ms_snapshot', 's');
+      $query->join('ms_fact_membership_activity', 'a', 's.id = a.snapshot_id');
+      $query->fields('s', ['snapshot_date']);
+      $query->fields('a', ['joins', 'cancels', 'net_change']);
+      $query->condition('s.id', $snapshot_id);
+      $results = $query->execute()->fetchAll(\PDO::FETCH_ASSOC);
+
+      foreach ($results as $row) {
+        fputcsv($handle, $row);
+      }
+
+      fclose($handle);
+    });
+
+    $response->headers->set('Content-Type', 'text/csv');
+    $response->headers->set('Content-Disposition', 'attachment; filename="membership_activity_snapshot.csv"');
+
+    return $response;
+  }
 }

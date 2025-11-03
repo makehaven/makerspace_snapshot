@@ -3,6 +3,7 @@
 namespace Drupal\makerspace_snapshot;
 
 use Psr\Log\LoggerInterface;
+use Drupal\Core\Cache\Cache;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Extension\ModuleHandlerInterface;
@@ -582,7 +583,7 @@ SQL,
     foreach (array_keys($metrics) as $kpiId) {
       $tags[] = 'makerspace_snapshot:kpi:' . $kpiId;
     }
-    cache_tags_invalidate($tags);
+    Cache::invalidateTags($tags);
   }
 
   /**

@@ -66,6 +66,17 @@ makerspace_snapshot.download.plan_level:
     parameters:
       snapshot_id:
         type: integer
+makerspace_snapshot.download.membership_activity:
+  path: '/admin/config/makerspace/snapshot/download-activity/{snapshot_id}'
+  defaults:
+    _controller: '\Drupal\makerspace_snapshot\Controller\SnapshotDownloadController::downloadMembershipActivityData'
+    _title: 'Download Membership Activity Data'
+  requirements:
+    _permission: 'administer site configuration'
+  options:
+    parameters:
+      snapshot_id:
+        type: integer
 makerspace_snapshot.api.plan_level:
   path: '/makerspace-snapshot/api/plan-level/{snapshot_type}'
   defaults:

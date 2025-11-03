@@ -81,6 +81,19 @@ function makerspace_snapshot_schema() {
     'primary key' => ['snapshot_id', 'event_id'],
   ];
 
+  $schema['ms_fact_kpi_snapshot'] = [
+    'description' => 'KPI metrics collected during snapshot runs.',
+    'fields' => [
+      'snapshot_id' => ['type' => 'int', 'not null' => TRUE],
+      'kpi_id' => ['type' => 'varchar', 'length' => 128, 'not null' => TRUE],
+      'metric_value' => ['type' => 'float', 'not null' => TRUE, 'default' => 0],
+      'period_year' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'period_month' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'meta' => ['type' => 'blob', 'not null' => FALSE, 'serialize' => TRUE],
+    ],
+    'primary key' => ['snapshot_id', 'kpi_id'],
+  ];
+
   return $schema;
 }
 
@@ -305,6 +318,10 @@ function makerspace_snapshot_update_10006() {
 
   if (!$schema->tableExists('ms_fact_event_snapshot')) {
     $schema->createTable('ms_fact_event_snapshot', $new_schema['ms_fact_event_snapshot']);
+  }
+
+  if (!$schema->tableExists('ms_fact_kpi_snapshot')) {
+    $schema->createTable('ms_fact_kpi_snapshot', $new_schema['ms_fact_kpi_snapshot']);
   }
 
   if ($schema->tableExists('ms_snapshot') && !$schema->fieldExists('ms_snapshot', 'definition')) {
