@@ -344,7 +344,9 @@ class SnapshotAdminForm extends ConfigFormBase {
 
     foreach ($import_data as $date => &$date_data) {
       if (isset($results[$date])) {
-        $date_data['snapshot_id'] = $results[$date]->id;
+        foreach ($date_data as &$payload) {
+          $payload['snapshot_id'] = $results[$date]->id;
+        }
       }
     }
 
