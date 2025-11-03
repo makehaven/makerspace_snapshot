@@ -18,6 +18,14 @@ makerspace_snapshot.api.org_level:
       snapshot_type:
         type: string
 
+makerspace_snapshot.download_template:
+  path: '/admin/config/makerspace/snapshot/template/{definition}'
+  defaults:
+    _controller: '\Drupal\makerspace_snapshot\Controller\SnapshotTemplateController::downloadTemplate'
+    _title: 'Download Snapshot Template'
+  requirements:
+    _permission: 'administer site configuration'
+
 makerspace_snapshot.download.org_level:
   path: '/admin/config/makerspace/snapshot/download-org/{snapshot_id}'
   defaults:

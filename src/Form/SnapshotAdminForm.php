@@ -150,24 +150,28 @@ class SnapshotAdminForm extends ConfigFormBase {
       '#type' => 'managed_file',
       '#title' => $this->t('Membership Totals CSV'),
       '#upload_validators' => ['file_validate_extensions' => ['csv']],
+      '#description' => $this->t('<a href="@url">Download Template</a>', ['@url' => Url::fromRoute('makerspace_snapshot.download_template', ['definition' => 'membership_totals'])->toString()]),
     ];
 
     $form['import_snapshot']['membership_activity_csv'] = [
       '#type' => 'managed_file',
       '#title' => $this->t('Membership Activity CSV'),
       '#upload_validators' => ['file_validate_extensions' => ['csv']],
+      '#description' => $this->t('<a href="@url">Download Template</a>', ['@url' => Url::fromRoute('makerspace_snapshot.download_template', ['definition' => 'membership_activity'])->toString()]),
     ];
 
     $form['import_snapshot']['event_registrations_csv'] = [
       '#type' => 'managed_file',
       '#title' => $this->t('Event Registrations CSV'),
       '#upload_validators' => ['file_validate_extensions' => ['csv']],
+      '#description' => $this->t('<a href="@url">Download Template</a>', ['@url' => Url::fromRoute('makerspace_snapshot.download_template', ['definition' => 'event_registrations'])->toString()]),
     ];
 
     $form['import_snapshot']['plan_csv'] = [
       '#type' => 'managed_file',
       '#title' => $this->t('Plan CSV'),
       '#upload_validators' => ['file_validate_extensions' => ['csv']],
+      '#description' => $this->t('<a href="@url">Download Template</a>', ['@url' => Url::fromRoute('makerspace_snapshot.download_template', ['definition' => 'plan_levels'])->toString()]),
     ];
 
     $form['import_snapshot']['submit'] = [
