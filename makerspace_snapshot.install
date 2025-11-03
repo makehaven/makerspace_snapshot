@@ -284,3 +284,10 @@ function makerspace_snapshot_update_10004() {
     ]);
   }
 }
+
+/**
+ * Clear caches to register new routes.
+ */
+function makerspace_snapshot_update_10005() {
+  // Empty update to clear caches.
+}
