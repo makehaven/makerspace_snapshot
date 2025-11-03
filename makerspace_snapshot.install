@@ -259,7 +259,7 @@ function makerspace_snapshot_update_10003() {
 }
 
 /**
- * Add new tables and definition field for import functionality.
+ * Combined update for all schema changes.
  */
 function makerspace_snapshot_update_10004() {
   $connection = \Drupal::database();
@@ -282,25 +282,10 @@ function makerspace_snapshot_update_10004() {
       'default' => 'membership_totals',
     ]);
   }
-}
-
-/**
- * Clear caches to register new routes.
- */
-function makerspace_snapshot_update_10005() {
-  // This update has been intentionally left empty to prevent a fatal error
-  // during the update process. A safe cache clearing tool has been provided
-  // at /makerspace-snapshot/safe-cache-clear.
-}
-
-/**
- * Remove the is_test field from the ms_snapshot table.
- */
-function makerspace_snapshot_update_10006() {
-  $connection = \Drupal::database();
-  $schema = $connection->schema();
 
   if ($schema->tableExists('ms_snapshot') && $schema->fieldExists('ms_snapshot', 'is_test')) {
     $schema->dropField('ms_snapshot', 'is_test');
   }
+
+  \Drupal::service('router.builder')->rebuild();
 }
