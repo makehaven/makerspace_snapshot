@@ -83,11 +83,10 @@ class SnapshotService {
    * @param string|null $snapshot_date
    *   The date of the snapshot.
    */
-  public function takeSnapshot($snapshot_type, $is_test = FALSE, $snapshot_date = NULL) {
+  public function takeSnapshot($snapshot_type, $snapshot_date = NULL) {
     try {
       $snapshotDate = $snapshot_date ?? (new \DateTime())->format('Y-m-d');
       $snapshotDate = (new \DateTimeImmutable($snapshotDate))->format('Y-m-01');
-      $isTest = $is_test ? 1 : 0;
 
       $periodStart = (new \DateTimeImmutable($snapshotDate))->setTime(0,0,0)->format('Y-m-d H:i:s');
       $periodEnd   = (new \DateTimeImmutable($snapshotDate))->modify('last day of this month')->setTime(23,59,59)->format('Y-m-d H:i:s');
@@ -135,7 +134,6 @@ class SnapshotService {
           'definition'    => 'membership_totals',
           'snapshot_type' => $snapshot_type,
           'snapshot_date' => $snapshotDate,
-          'is_test'       => $isTest,
           'created_at'    => time(),
         ])->execute();
 
@@ -194,23 +192,26 @@ class SnapshotService {
     }
   }
 
-  public function importSnapshot($definition, $schedule, $snapshot_date, $is_test, array $payload) {
+  public function importSnapshot($definition, $schedule, $snapshot_date, array $payload) {
     $definitions = $this->buildDefinitions();
     if (!isset($definitions[$definition])) {
       throw new \Exception("Invalid snapshot definition: {$definition}");
     }
 
-    $snapshot_id = $this->database->insert('ms_snapshot')
-      ->fields([
-        'definition'    => $definition,
-        'snapshot_type' => $schedule,
-        'snapshot_date' => $snapshot_date,
-        'is_test'       => $is_test,
-        'created_at'    => time(),
-      ])->execute();
+    $snapshot_id = $payload['snapshot_id'] ?? NULL;
 
     if (!$snapshot_id) {
-      throw new \Exception("Failed to create snapshot for {$snapshot_date}");
+      $snapshot_id = $this->database->insert('ms_snapshot')
+        ->fields([
+          'definition'    => $definition,
+          'snapshot_type' => $schedule,
+          'snapshot_date' => $snapshot_date,
+          'created_at'    => time(),
+        ])->execute();
+    }
+
+    if (!$snapshot_id) {
+      throw new \Exception("Failed to create or update snapshot for {$snapshot_date}");
     }
 
     switch ($definition) {
@@ -229,9 +230,9 @@ class SnapshotService {
   }
 
   protected function importMembershipSnapshot($snapshot_id, array $payload) {
-    $this->database->insert('ms_fact_org_snapshot')
+    $this->database->merge('ms_fact_org_snapshot')
+      ->key(['snapshot_id' => $snapshot_id])
       ->fields([
-        'snapshot_id'    => $snapshot_id,
         'members_active' => $payload['totals']['members_active'],
         'members_paused' => $payload['totals']['members_paused'],
         'members_lapsed' => $payload['totals']['members_lapsed'],
@@ -242,10 +243,9 @@ class SnapshotService {
 
     if (isset($payload['plans'])) {
       foreach ($payload['plans'] as $plan) {
-        $this->database->insert('ms_fact_plan_snapshot')
+        $this->database->merge('ms_fact_plan_snapshot')
+          ->key(['snapshot_id' => $snapshot_id, 'plan_code' => $plan['plan_code']])
           ->fields([
-            'snapshot_id'    => $snapshot_id,
-            'plan_code'      => $plan['plan_code'],
             'plan_label'     => $plan['plan_label'],
             'count_members'  => $plan['count_members'],
           ])->execute();
@@ -254,9 +254,9 @@ class SnapshotService {
   }
 
   protected function importMembershipActivitySnapshot($snapshot_id, array $payload) {
-    $this->database->insert('ms_fact_membership_activity')
+    $this->database->merge('ms_fact_membership_activity')
+      ->key(['snapshot_id' => $snapshot_id])
       ->fields([
-        'snapshot_id' => $snapshot_id,
         'joins'       => $payload['activity']['joins'],
         'cancels'     => $payload['activity']['cancels'],
         'net_change'  => $payload['activity']['net_change'],
@@ -265,10 +265,9 @@ class SnapshotService {
 
   protected function importEventSnapshot($snapshot_id, array $payload) {
     foreach ($payload['events'] as $event) {
-      $this->database->insert('ms_fact_event_snapshot')
+      $this->database->merge('ms_fact_event_snapshot')
+        ->key(['snapshot_id' => $snapshot_id, 'event_id' => $event['event_id']])
         ->fields([
-          'snapshot_id'        => $snapshot_id,
-          'event_id'           => $event['event_id'],
           'event_title'        => $event['event_title'],
           'event_start_date'   => $event['event_start_date'],
           'registration_count' => $event['registration_count'],

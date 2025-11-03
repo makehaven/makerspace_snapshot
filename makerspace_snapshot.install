@@ -20,7 +20,6 @@ function makerspace_snapshot_schema() {
       'definition' => ['type' => 'varchar', 'length' => 255, 'not null' => TRUE],
       'snapshot_type' => ['type' => 'varchar', 'length' => 255, 'not null' => TRUE],
       'snapshot_date' => ['type' => 'varchar', 'length' => 10, 'not null' => TRUE], // YYYY-MM-01
-      'is_test' => ['type' => 'int', 'size' => 'tiny', 'not null' => TRUE, 'default' => 0],
       'created_at' => ['type' => 'int', 'not null' => FALSE],
     ],
     'primary key' => ['id'],
@@ -290,4 +289,16 @@ function makerspace_snapshot_update_10004() {
  */
 function makerspace_snapshot_update_10005() {
   // Empty update to clear caches.
+}
+
+/**
+ * Remove the is_test field from the ms_snapshot table.
+ */
+function makerspace_snapshot_update_10006() {
+  $connection = \Drupal::database();
+  $schema = $connection->schema();
+
+  if ($schema->tableExists('ms_snapshot') && $schema->fieldExists('ms_snapshot', 'is_test')) {
+    $schema->dropField('ms_snapshot', 'is_test');
+  }
 }

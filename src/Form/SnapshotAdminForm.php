@@ -104,11 +104,6 @@ class SnapshotAdminForm extends ConfigFormBase {
       '#default_value' => 'manual',
     ];
 
-    $form['manual_snapshot']['is_test'] = [
-      '#type' => 'checkbox',
-      '#title' => $this->t('Is this a test snapshot?'),
-      '#description' => $this->t('Test snapshots can be deleted later.'),
-    ];
 
     $form['manual_snapshot']['submit'] = [
       '#type' => 'submit',
@@ -135,10 +130,6 @@ class SnapshotAdminForm extends ConfigFormBase {
       '#default_value' => 'manual',
     ];
 
-    $form['import_snapshot']['import_is_test'] = [
-      '#type' => 'checkbox',
-      '#title' => $this->t('Is this a test snapshot?'),
-    ];
 
     $form['import_snapshot']['membership_totals_csv'] = [
       '#type' => 'managed_file',
@@ -186,7 +177,6 @@ class SnapshotAdminForm extends ConfigFormBase {
       'definition' => $this->t('Definition'),
       'snapshot_type' => $this->t('Type'),
       'snapshot_date' => $this->t('Date'),
-      'is_test' => $this->t('Is Test?'),
       'created_at' => $this->t('Created'),
       'operations' => $this->t('Operations'),
     ];
@@ -204,7 +194,6 @@ class SnapshotAdminForm extends ConfigFormBase {
           'definition' => $snapshot->definition ?? 'membership_totals',
           'snapshot_type' => $snapshot->snapshot_type,
           'snapshot_date' => $snapshot->snapshot_date,
-          'is_test' => $snapshot->is_test ? $this->t('Yes') : $this->t('No'),
           'created_at' => date('Y-m-d H:i:s', $snapshot->created_at),
           'operations' => [
             'data' => [
@@ -228,7 +217,6 @@ class SnapshotAdminForm extends ConfigFormBase {
                 '#name' => 'delete-' . $snapshot->id,
                 '#submit' => ['::submitDeleteSnapshot'],
                 '#attributes' => ['snapshot-id' => $snapshot->id],
-                '#access' => (bool) $snapshot->is_test,
               ],
             ]
           ],
@@ -269,7 +257,6 @@ class SnapshotAdminForm extends ConfigFormBase {
           $definition,
           $form_state->getValue('import_schedule'),
           $date,
-          $form_state->getValue('import_is_test'),
           $data
         );
       }
@@ -333,15 +320,17 @@ class SnapshotAdminForm extends ConfigFormBase {
         $all_dates[] = $event_dates[0];
     }
 
-    // Check for duplicate imports.
+    // Check for existing snapshots.
     $all_dates = array_unique($all_dates);
     $query = $this->database->select('ms_snapshot', 's');
-    $query->fields('s', ['snapshot_date']);
+    $query->fields('s', ['id', 'snapshot_date']);
     $query->condition('snapshot_date', $all_dates, 'IN');
-    $results = $query->execute()->fetchAll();
-    if (count($results) > 0) {
-        $existing_dates = array_column($results, 'snapshot_date');
-        $form_state->setErrorByName('membership_totals_csv', $this->t('Snapshots for the following dates already exist: @dates', ['@dates' => implode(', ', $existing_dates)]));
+    $results = $query->execute()->fetchAllAssoc('snapshot_date');
+
+    foreach ($import_data as $date => &$date_data) {
+      if (isset($results[$date])) {
+        $date_data['snapshot_id'] = $results[$date]->id;
+      }
     }
 
     $form_state->set('import_snapshot_data', $import_data);
