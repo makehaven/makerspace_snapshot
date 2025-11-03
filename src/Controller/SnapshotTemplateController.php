@@ -54,10 +54,14 @@ class SnapshotTemplateController extends ControllerBase {
     }
 
     $headers = $definitions[$definition]['headers'];
+    $example_data = $this->getExampleData($definition);
 
-    $response = new StreamedResponse(function () use ($headers) {
+    $response = new StreamedResponse(function () use ($headers, $example_data) {
       $handle = fopen('php://output', 'w');
       fputcsv($handle, $headers);
+      if ($example_data) {
+        fputcsv($handle, $example_data);
+      }
       fclose($handle);
     });
 
@@ -65,6 +69,21 @@ class SnapshotTemplateController extends ControllerBase {
     $response->headers->set('Content-Disposition', 'attachment; filename="' . $definition . '_template.csv"');
 
     return $response;
+  }
+
+  protected function getExampleData($definition) {
+    switch ($definition) {
+      case 'membership_totals':
+        return ['2025-01-01', 100, 10, 5];
+      case 'membership_activity':
+        return ['2025-01-01', 5, 2, 3];
+      case 'event_registrations':
+        return ['2025-01-01', 123, 'Intro to Woodworking', '2025-01-15', 12];
+      case 'plan_levels':
+        return ['2025-01-01', 'basic', 'Basic Plan', 50];
+      default:
+        return NULL;
+    }
   }
 
 }

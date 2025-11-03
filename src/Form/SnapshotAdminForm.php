@@ -117,6 +117,10 @@ class SnapshotAdminForm extends ConfigFormBase {
       '#group' => 'tabs',
     ];
 
+    $form['import_snapshot']['description'] = [
+        '#markup' => '<p>' . $this->t('Import historical snapshot data from CSV files. You can import data for multiple dates in a single file. Dates will be normalized to the first of the month. Empty numeric values are acceptable and will be treated as 0.') . '</p>',
+    ];
+
     $form['import_snapshot']['import_schedule'] = [
       '#type' => 'select',
       '#title' => $this->t('Snapshot Schedule'),
@@ -269,13 +273,30 @@ class SnapshotAdminForm extends ConfigFormBase {
     $import_data = [];
     $all_dates = [];
 
+    $normalize_row = function (&$row) use ($form_state) {
+        // Normalize date.
+        try {
+            $row['snapshot_date'] = (new \DateTimeImmutable($row['snapshot_date']))->format('Y-m-01');
+        } catch (\Exception $e) {
+            $form_state->setErrorByName('membership_totals_csv', $this->t('Invalid date format found in CSV: @date', ['@date' => $row['snapshot_date']]));
+            return;
+        }
+
+        // Normalize numeric fields.
+        foreach ($row as $key => &$value) {
+            if ($key !== 'snapshot_date' && $key !== 'plan_code' && $key !== 'plan_label' && $key !== 'event_title' && $key !== 'event_start_date') {
+                if ($value === '' || !is_numeric($value)) {
+                    $value = 0;
+                }
+            }
+        }
+    };
+
     // Membership Totals
     if ($file_id = $form_state->getValue(['membership_totals_csv', 0])) {
       $data = $this->extractCsvData($file_id, ['snapshot_date', 'members_active', 'members_paused', 'members_lapsed']);
       foreach ($data as $row) {
-        if (!is_numeric($row['members_active']) || !is_numeric($row['members_paused']) || !is_numeric($row['members_lapsed'])) {
-          $form_state->setErrorByName('membership_totals_csv', $this->t('The membership totals CSV contains non-numeric values.'));
-        }
+        $normalize_row($row);
         $import_data[$row['snapshot_date']]['membership_totals']['totals'] = $row;
         $all_dates[] = $row['snapshot_date'];
       }
@@ -285,9 +306,7 @@ class SnapshotAdminForm extends ConfigFormBase {
     if ($file_id = $form_state->getValue(['membership_activity_csv', 0])) {
       $data = $this->extractCsvData($file_id, ['snapshot_date', 'joins', 'cancels', 'net_change']);
       foreach ($data as $row) {
-        if (!is_numeric($row['joins']) || !is_numeric($row['cancels']) || !is_numeric($row['net_change'])) {
-          $form_state->setErrorByName('membership_activity_csv', $this->t('The membership activity CSV contains non-numeric values.'));
-        }
+        $normalize_row($row);
         $import_data[$row['snapshot_date']]['membership_activity']['activity'] = $row;
         $all_dates[] = $row['snapshot_date'];
       }
@@ -297,9 +316,7 @@ class SnapshotAdminForm extends ConfigFormBase {
     if ($file_id = $form_state->getValue(['plan_csv', 0])) {
       $data = $this->extractCsvData($file_id, ['snapshot_date', 'plan_code', 'plan_label', 'count_members']);
       foreach ($data as $row) {
-        if (!is_numeric($row['count_members'])) {
-          $form_state->setErrorByName('plan_csv', $this->t('The plan CSV contains non-numeric values.'));
-        }
+        $normalize_row($row);
         $import_data[$row['snapshot_date']]['membership_totals']['plans'][] = $row;
       }
     }
@@ -307,14 +324,12 @@ class SnapshotAdminForm extends ConfigFormBase {
     // Event Registrations
     if ($file_id = $form_state->getValue(['event_registrations_csv', 0])) {
         $data = $this->extractCsvData($file_id, ['snapshot_date', 'event_id', 'event_title', 'event_start_date', 'registration_count']);
+        foreach ($data as $row) {
+            $normalize_row($row);
+        }
         $event_dates = array_unique(array_column($data, 'snapshot_date'));
         if (count($event_dates) > 1) {
             $form_state->setErrorByName('event_registrations_csv', $this->t('The event registrations CSV can only contain data for a single date.'));
-        }
-        foreach ($data as $row) {
-            if (!is_numeric($row['event_id']) || !is_numeric($row['registration_count'])) {
-                $form_state->setErrorByName('event_registrations_csv', $this->t('The event registrations CSV contains non-numeric values.'));
-            }
         }
         $import_data[$event_dates[0]]['event_registrations']['events'] = $data;
         $all_dates[] = $event_dates[0];
