@@ -17,14 +17,15 @@ function makerspace_snapshot_schema() {
     'description' => 'Snapshot metadata.',
     'fields' => [
       'id' => ['type' => 'serial', 'not null' => TRUE],
+      'definition' => ['type' => 'varchar', 'length' => 255, 'not null' => TRUE],
       'snapshot_type' => ['type' => 'varchar', 'length' => 255, 'not null' => TRUE],
       'snapshot_date' => ['type' => 'varchar', 'length' => 10, 'not null' => TRUE], // YYYY-MM-01
-      'is_test' => ['type' => 'int', 'size' => 'tiny', 'not null' => TRUE, 'default' => 0],
       'created_at' => ['type' => 'int', 'not null' => FALSE],
     ],
     'primary key' => ['id'],
     'indexes' => [
       'type_date' => ['snapshot_type', 'snapshot_date'],
+      'definition' => ['definition'],
     ],
   ];
 
@@ -56,28 +57,27 @@ function makerspace_snapshot_schema() {
     ],
   ];
 
-  $schema['ms_fact_kpi_snapshot'] = [
-    'description' => 'KPI values captured during snapshot runs.',
+  $schema['ms_fact_membership_activity'] = [
+    'description' => 'Membership activity metrics.',
     'fields' => [
-      'id' => ['type' => 'serial', 'not null' => TRUE],
       'snapshot_id' => ['type' => 'int', 'not null' => TRUE],
-      'kpi_id' => ['type' => 'varchar', 'length' => 191, 'not null' => TRUE],
-      'metric_value' => ['type' => 'numeric', 'precision' => 20, 'scale' => 6, 'not null' => FALSE],
-      'period_year' => ['type' => 'int', 'size' => 'small', 'not null' => FALSE],
-      'period_month' => ['type' => 'int', 'size' => 'tiny', 'not null' => FALSE],
-      'meta' => ['type' => 'blob', 'size' => 'big', 'not null' => FALSE, 'serialize' => TRUE],
+      'joins'          => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'cancels'        => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'net_change'     => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
     ],
-    'primary key' => ['id'],
-    'indexes' => [
-      'snapshot_kpi' => ['snapshot_id', 'kpi_id'],
-      'kpi_period' => ['kpi_id', 'period_year', 'period_month'],
+    'primary key' => ['snapshot_id'],
+  ];
+
+  $schema['ms_fact_event_snapshot'] = [
+    'description' => 'Event registration metrics.',
+    'fields' => [
+      'snapshot_id' => ['type' => 'int', 'not null' => TRUE],
+      'event_id' => ['type' => 'int', 'not null' => TRUE],
+      'event_title' => ['type' => 'varchar', 'length' => 255, 'not null' => TRUE],
+      'event_start_date' => ['type' => 'varchar', 'length' => 255, 'not null' => TRUE],
+      'registration_count' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
     ],
-    'foreign keys' => [
-      'snapshot_reference' => [
-        'table' => 'ms_snapshot',
-        'columns' => ['snapshot_id' => 'id'],
-      ],
-    ],
+    'primary key' => ['snapshot_id', 'event_id'],
   ];
 
   return $schema;
@@ -215,9 +215,9 @@ function makerspace_snapshot_install() {
     $snapshot_date = (new \DateTimeImmutable('first day of last month'))->format('Y-m-01');
     $snapshot_id = $connection->insert('ms_snapshot')
       ->fields([
+        'definition' => 'membership_totals',
         'snapshot_type' => 'monthly',
         'snapshot_date' => $snapshot_date,
-        'is_test' => 0,
         'created_at' => time(),
       ])
       ->execute();
@@ -278,4 +278,36 @@ function makerspace_snapshot_update_10003() {
   if ($schema->tableExists('ms_snapshot')) {
     $schema->addIndex('ms_snapshot', 'type_date', ['snapshot_type', 'snapshot_date']);
   }
+}
+
+/**
+ * Combined update for all schema changes.
+ */
+function makerspace_snapshot_update_10004() {
+  $connection = \Drupal::database();
+  $schema = $connection->schema();
+  $new_schema = makerspace_snapshot_schema();
+
+  if (!$schema->tableExists('ms_fact_membership_activity')) {
+    $schema->createTable('ms_fact_membership_activity', $new_schema['ms_fact_membership_activity']);
+  }
+
+  if (!$schema->tableExists('ms_fact_event_snapshot')) {
+    $schema->createTable('ms_fact_event_snapshot', $new_schema['ms_fact_event_snapshot']);
+  }
+
+  if ($schema->tableExists('ms_snapshot') && !$schema->fieldExists('ms_snapshot', 'definition')) {
+    $schema->addField('ms_snapshot', 'definition', [
+      'type' => 'varchar',
+      'length' => 255,
+      'not null' => TRUE,
+      'default' => 'membership_totals',
+    ]);
+  }
+
+  if ($schema->tableExists('ms_snapshot') && $schema->fieldExists('ms_snapshot', 'is_test')) {
+    $schema->dropField('ms_snapshot', 'is_test');
+  }
+
+  \Drupal::service('router.builder')->rebuild();
 }
