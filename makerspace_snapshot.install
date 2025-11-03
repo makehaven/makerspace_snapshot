@@ -20,6 +20,7 @@ function makerspace_snapshot_schema() {
       'definition' => ['type' => 'varchar', 'length' => 255, 'not null' => TRUE],
       'snapshot_type' => ['type' => 'varchar', 'length' => 255, 'not null' => TRUE],
       'snapshot_date' => ['type' => 'varchar', 'length' => 10, 'not null' => TRUE], // YYYY-MM-01
+      'source' => ['type' => 'varchar', 'length' => 32, 'not null' => TRUE, 'default' => 'system'],
       'created_at' => ['type' => 'int', 'not null' => FALSE],
     ],
     'primary key' => ['id'],
@@ -208,6 +209,15 @@ function makerspace_snapshot_update_10004() {
  * Implements hook_install().
  */
 function makerspace_snapshot_install() {
+  $schema = \Drupal::database()->schema();
+  $tables = makerspace_snapshot_schema();
+
+  foreach ($tables as $table_name => $table_definition) {
+    if (!$schema->tableExists($table_name)) {
+      $schema->createTable($table_name, $table_definition);
+    }
+  }
+
   // Seed data if tables are empty.
   $connection = \Drupal::database();
   $count = $connection->select('ms_snapshot')->countQuery()->execute()->fetchField();
@@ -218,6 +228,7 @@ function makerspace_snapshot_install() {
         'definition' => 'membership_totals',
         'snapshot_type' => 'monthly',
         'snapshot_date' => $snapshot_date,
+        'source' => 'system',
         'created_at' => time(),
       ])
       ->execute();
@@ -283,7 +294,7 @@ function makerspace_snapshot_update_10003() {
 /**
  * Combined update for all schema changes.
  */
-function makerspace_snapshot_update_10004() {
+function makerspace_snapshot_update_10006() {
   $connection = \Drupal::database();
   $schema = $connection->schema();
   $new_schema = makerspace_snapshot_schema();
@@ -309,5 +320,26 @@ function makerspace_snapshot_update_10004() {
     $schema->dropField('ms_snapshot', 'is_test');
   }
 
-  \Drupal::service('router.builder')->rebuild();
+  if ($schema->tableExists('ms_snapshot') && !$schema->fieldExists('ms_snapshot', 'source')) {
+    $schema->addField('ms_snapshot', 'source', [
+      'type' => 'varchar',
+      'length' => 32,
+      'not null' => TRUE,
+      'default' => 'system',
+    ]);
+    $connection->update('ms_snapshot')
+      ->fields(['source' => 'system'])
+      ->execute();
+  }
+
+}
+
+/**
+ * Remove obsolete snapshot sources configuration.
+ */
+function makerspace_snapshot_update_10007() {
+  $config = \Drupal::configFactory()->getEditable('makerspace_snapshot.sources');
+  if (!$config->isNew()) {
+    $config->delete();
+  }
 }

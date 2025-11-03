@@ -36,9 +36,10 @@ class MakerspaceSnapshotCommands extends DrushCommands {
         'is-test' => InputOption::VALUE_NONE,
     ]) {
         $this->snapshotService->takeSnapshot(
-            $options['snapshot-type'] ?? 'manual',
+            $options['snapshot-type'] ?? 'monthly',
             $options['is-test'] ?? FALSE,
-            $options['snapshot-date'] ?? NULL
+            $options['snapshot-date'] ?? NULL,
+            'manual_drush'
         );
   }
 }

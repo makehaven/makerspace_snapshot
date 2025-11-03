@@ -47,7 +47,7 @@ function makerspace_snapshot_cron() {
 
   if ($should_run) {
     $snapshot_date = (new DrupalDateTime('yesterday'))->format('Y-m-d');
-    \Drupal::service('makerspace_snapshot.snapshot_service')->takeSnapshot($snapshot_type, FALSE, $snapshot_date);
+    \Drupal::service('makerspace_snapshot.snapshot_service')->takeSnapshot($snapshot_type, FALSE, $snapshot_date, 'automatic_cron');
   }
 }
 

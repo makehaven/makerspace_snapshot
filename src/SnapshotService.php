@@ -41,6 +41,104 @@ class SnapshotService {
   protected ModuleHandlerInterface $moduleHandler;
 
   /**
+   * Canonical SQL queries used to build snapshots.
+   *
+   * @var array
+   */
+  protected array $sourceQueries = [
+    'sql_active' => [
+      'label' => 'Active members',
+      'description' => 'Returns the current active membership roster with plan codes and labels. Used for membership totals and plan-level counts.',
+      'sql' => <<<SQL
+SELECT u.uid AS member_id,
+       'MEMBER' AS plan_code,
+       'Member' AS plan_label
+FROM users_field_data u
+INNER JOIN user__roles r ON u.uid = r.entity_id
+WHERE r.roles_target_id = 'member' AND u.status = 1
+SQL,
+    ],
+    'sql_paused' => [
+      'label' => 'Paused members',
+      'description' => 'Lists members flagged as paused so they can be counted separately from active.',
+      'sql' => <<<SQL
+SELECT u.uid AS member_id,
+       'MEMBER_PAUSED' AS plan_code,
+       'Member (Paused)' AS plan_label
+FROM users_field_data u
+INNER JOIN user__roles r ON u.uid = r.entity_id
+WHERE r.roles_target_id = 'member_paused' AND u.status = 1
+SQL,
+    ],
+    'sql_lapsed' => [
+      'label' => 'Lapsed members',
+      'description' => 'Identifies users without an active membership role to track lapsed counts.',
+      'sql' => <<<SQL
+SELECT u.uid AS member_id,
+       'MEMBER_LAPSED' AS plan_code,
+       'Member (Lapsed)' AS plan_label
+FROM users_field_data u
+WHERE u.uid NOT IN (
+  SELECT entity_id FROM user__roles WHERE roles_target_id = 'member'
+)
+SQL,
+    ],
+    'sql_joins' => [
+      'label' => 'Joins in period',
+      'description' => 'Finds members who joined during the reporting window. Requires :start and :end parameters.',
+      'sql' => <<<SQL
+SELECT u.uid AS member_id,
+       'MEMBER' AS plan_code,
+       'Member' AS plan_label,
+       FROM_UNIXTIME(u.created, '%Y-%m-%d') AS occurred_at
+FROM users_field_data u
+INNER JOIN user__roles r ON u.uid = r.entity_id
+WHERE r.roles_target_id = 'member'
+  AND u.created BETWEEN UNIX_TIMESTAMP(:start) AND UNIX_TIMESTAMP(:end)
+SQL,
+    ],
+    'sql_cancels' => [
+      'label' => 'Cancels in period',
+      'description' => 'Placeholder query for cancellations; replace with site-specific logic that records membership cancellations between :start and :end.',
+      'sql' => <<<SQL
+SELECT NULL AS member_id,
+       NULL AS plan_code,
+       NULL AS plan_label,
+       NULL AS occurred_at
+WHERE 1 = 0
+SQL,
+    ],
+  ];
+
+  /**
+   * Dataset definitions mapped to the queries that power them.
+   *
+   * @var array
+   */
+  protected array $datasetSourceMap = [
+    'membership_totals' => [
+      'label' => 'Membership Totals',
+      'description' => 'Aggregates active, paused, and lapsed member counts for the reporting period.',
+      'queries' => ['sql_active', 'sql_paused', 'sql_lapsed', 'sql_joins', 'sql_cancels'],
+    ],
+    'membership_activity' => [
+      'label' => 'Membership Activity',
+      'description' => 'Calculates joins, cancels, and net change from the period-specific queries.',
+      'queries' => ['sql_joins', 'sql_cancels'],
+    ],
+    'plan_levels' => [
+      'label' => 'Plan Levels',
+      'description' => 'Counts active members by plan code using the active member snapshot.',
+      'queries' => ['sql_active'],
+    ],
+    'event_registrations' => [
+      'label' => 'Event Registrations',
+      'description' => 'Currently populated via CSV import. No automated SQL source has been implemented yet.',
+      'queries' => [],
+    ],
+  ];
+
+  /**
    * Constructs a new SnapshotService object.
    *
    * @param \Drupal\Core\Database\Connection $database
@@ -52,7 +150,7 @@ class SnapshotService {
    * @param \Drupal\Core\Extension\ModuleHandlerInterface $module_handler
    *   The module handler.
    */
-  public function __construct(Connection $database, LoggerInterface $logger, ConfigFactoryInterface $config_factory, ModuleHandlerInterface $module_handler = NULL) {
+  public function __construct(Connection $database, LoggerInterface $logger, ConfigFactoryInterface $config_factory, ?ModuleHandlerInterface $module_handler = NULL) {
     $this->database = $database;
     $this->logger = $logger;
     $this->configFactory = $config_factory;
@@ -88,13 +186,17 @@ class SnapshotService {
    * Takes a snapshot.
    *
    * @param string $snapshot_type
-   *   The type of snapshot to take.
+   *   The cadence of the snapshot (monthly, quarterly, etc.).
    * @param bool $is_test
    *   Whether the snapshot is a test snapshot.
    * @param string|null $snapshot_date
-   *   The date of the snapshot.
+   *   The date associated with the snapshot (Y-m-d format).
+   * @param string $source
+   *   The origin of the snapshot (manual_form, manual_import, manual_drush, automatic_cron, system).
+   * @param string[]|null $definitions
+   *   Optional list of definitions to update. Defaults to all supported definitions.
    */
-  public function takeSnapshot($snapshot_type, $is_test = FALSE, $snapshot_date = NULL) {
+  public function takeSnapshot($snapshot_type, $is_test = FALSE, $snapshot_date = NULL, string $source = 'system', ?array $definitions = NULL) {
     try {
       $isTest = (bool) $is_test;
 
@@ -104,28 +206,42 @@ class SnapshotService {
       $periodStart = (new \DateTimeImmutable($snapshotDate))->setTime(0,0,0)->format('Y-m-d H:i:s');
       $periodEnd   = (new \DateTimeImmutable($snapshotDate))->modify('last day of this month')->setTime(23,59,59)->format('Y-m-d H:i:s');
 
-      $stateQuery = function(string $key): array {
-        $sql = $this->configFactory->get('makerspace_snapshot.sources')->get($key);
-        if (!$sql) return [];
+      $supportedDefinitions = ['membership_totals', 'membership_activity', 'plan_levels'];
+      $selectedDefinitions = $definitions ?? $supportedDefinitions;
+      $selectedDefinitions = array_values(array_intersect($supportedDefinitions, $selectedDefinitions));
+      if (empty($selectedDefinitions)) {
+        $selectedDefinitions = $supportedDefinitions;
+      }
+
+      $sourceQueries = $this->getSourceQueries();
+
+      $stateQuery = function(string $key) use ($sourceQueries): array {
+        $sql = $sourceQueries[$key]['sql'] ?? '';
+        if (!$sql) {
+          return [];
+        }
         $rows = $this->database->query($sql)->fetchAll(\PDO::FETCH_ASSOC);
-        return array_map(fn($r) => [
-          'member_id' => (string) $r['member_id'],
-          'plan_code' => (string) $r['plan_code'],
-          'plan_label'=> (string) ($r['plan_label'] ?? $r['plan_code']),
-        ], $rows);
+        return array_map(static function ($r) {
+          return [
+            'member_id' => (string) $r['member_id'],
+            'plan_code' => (string) $r['plan_code'],
+            'plan_label' => (string) ($r['plan_label'] ?? $r['plan_code']),
+          ];
+        }, $rows);
       };
 
-      $periodQuery = function(string $key, string $start, string $end): array {
-        $sql = $this->configFactory->get('makerspace_snapshot.sources')->get($key);
-        if (!$sql) return [];
+      $periodQuery = function(string $key, string $start, string $end) use ($sourceQueries): array {
+        $sql = $sourceQueries[$key]['sql'] ?? '';
+        if (!$sql) {
+          return [];
+        }
 
         $params = [];
-        if (strpos($sql, ':start') !== false && strpos($sql, ':end') !== false) {
+        if (strpos($sql, ':start') !== FALSE && strpos($sql, ':end') !== FALSE) {
           $params = [':start' => $start, ':end' => $end];
         }
 
-        $rows = $this->database->query($sql, $params)->fetchAll(\PDO::FETCH_ASSOC);
-        return $rows;
+        return $this->database->query($sql, $params)->fetchAll(\PDO::FETCH_ASSOC);
       };
 
       $active  = $stateQuery('sql_active');
@@ -141,40 +257,52 @@ class SnapshotService {
       $cancels_count  = count($cancels);
       $net_change     = $joins_count - $cancels_count;
 
-      // Create snapshot metadata.
-      $snapshot_id = $this->database->insert('ms_snapshot')
-        ->fields([
-          'definition'    => 'membership_totals',
-          'snapshot_type' => $snapshot_type,
-          'snapshot_date' => $snapshotDate,
-          'created_at'    => time(),
-        ])->execute();
+      // Create snapshot metadata rows per definition.
+      $snapshotIds = [];
+      foreach ($selectedDefinitions as $definition) {
+        $snapshot_id = $this->database->insert('ms_snapshot')
+          ->fields([
+            'definition'    => $definition,
+            'snapshot_type' => $snapshot_type,
+            'snapshot_date' => $snapshotDate,
+            'source'        => $source,
+            'created_at'    => time(),
+          ])->execute();
 
-      if (!$snapshot_id) {
-        $this->logger->error("Failed to create snapshot for {$snapshotDate}");
+        if (!$snapshot_id) {
+          $this->logger->error("Failed to create {$definition} snapshot for {$snapshotDate}");
+          continue;
+        }
+        $snapshotIds[$definition] = $snapshot_id;
+      }
+
+      if (empty($snapshotIds)) {
+        $this->logger->error("Failed to create any snapshot records for {$snapshotDate}");
         return;
       }
 
-      // Insert org totals.
-      $this->database->insert('ms_fact_org_snapshot')
-        ->fields([
-          'snapshot_id'    => $snapshot_id,
-          'members_active' => $members_active,
-          'members_paused' => $members_paused,
-          'members_lapsed' => $members_lapsed,
-          'joins'          => 0,
-          'cancels'        => 0,
-          'net_change'     => 0,
-        ])->execute();
+      if (isset($snapshotIds['membership_totals'])) {
+        $this->database->insert('ms_fact_org_snapshot')
+          ->fields([
+            'snapshot_id'    => $snapshotIds['membership_totals'],
+            'members_active' => $members_active,
+            'members_paused' => $members_paused,
+            'members_lapsed' => $members_lapsed,
+            'joins'          => 0,
+            'cancels'        => 0,
+            'net_change'     => 0,
+          ])->execute();
+      }
 
-      // Insert membership activity.
-      $this->database->insert('ms_fact_membership_activity')
-        ->fields([
-          'snapshot_id' => $snapshot_id,
-          'joins'       => $joins_count,
-          'cancels'     => $cancels_count,
-          'net_change'  => $net_change,
-        ])->execute();
+      if (isset($snapshotIds['membership_activity'])) {
+        $this->database->insert('ms_fact_membership_activity')
+          ->fields([
+            'snapshot_id' => $snapshotIds['membership_activity'],
+            'joins'       => $joins_count,
+            'cancels'     => $cancels_count,
+            'net_change'  => $net_change,
+          ])->execute();
+      }
 
       // Per-plan dynamic counts.
       $byPlan = [];
@@ -187,41 +315,65 @@ class SnapshotService {
         $byPlan[$code]['count_members']++;
       }
 
-      foreach ($byPlan as $plan) {
-        $this->database->insert('ms_fact_plan_snapshot')
-          ->fields([
-            'snapshot_id'    => $snapshot_id,
-            'plan_code'      => $plan['plan_code'],
-            'plan_label'     => $plan['plan_label'],
-            'count_members'  => $plan['count_members'],
-          ])->execute();
+      if (isset($snapshotIds['plan_levels'])) {
+        foreach ($byPlan as $plan) {
+          $this->database->insert('ms_fact_plan_snapshot')
+            ->fields([
+              'snapshot_id'    => $snapshotIds['plan_levels'],
+              'plan_code'      => $plan['plan_code'],
+              'plan_label'     => $plan['plan_label'],
+              'count_members'  => $plan['count_members'],
+            ])->execute();
+        }
       }
 
-      $kpiContext = [
-        'snapshot_id' => $snapshot_id,
-        'snapshot_type' => $snapshot_type,
-        'snapshot_date' => $snapshotDate,
-        'period_start' => $periodStart,
-        'period_end' => $periodEnd,
-        'members_active' => $members_active,
-        'members_paused' => $members_paused,
-        'members_lapsed' => $members_lapsed,
-        'joins' => $joins_count,
-        'cancels' => $cancels_count,
-        'net_change' => $net_change,
-        'is_test' => $isTest,
-      ];
-      $kpiValues = $this->collectKpiMetrics($kpiContext);
-      if (!empty($kpiValues)) {
-        $this->storeKpiMetrics($snapshot_id, $snapshotDate, $kpiValues);
+      if (isset($snapshotIds['membership_totals'])) {
+        $snapshot_id = $snapshotIds['membership_totals'];
+        $kpiContext = [
+          'snapshot_id' => $snapshot_id,
+          'snapshot_type' => $snapshot_type,
+          'snapshot_date' => $snapshotDate,
+          'period_start' => $periodStart,
+          'period_end' => $periodEnd,
+          'members_active' => $members_active,
+          'members_paused' => $members_paused,
+          'members_lapsed' => $members_lapsed,
+          'joins' => $joins_count,
+          'cancels' => $cancels_count,
+          'net_change' => $net_change,
+          'is_test' => $isTest,
+          'source' => $source,
+        ];
+        $kpiValues = $this->collectKpiMetrics($kpiContext);
+        if (!empty($kpiValues)) {
+          $this->storeKpiMetrics($snapshot_id, $snapshotDate, $kpiValues);
+        }
       }
 
-      $this->logger->info("Snapshot stored for {$snapshotDate} (ID: {$snapshot_id})");
+      $this->logger->info("Snapshots stored for {$snapshotDate} (" . implode(', ', array_keys($snapshotIds)) . ")");
 
       $this->pruneSnapshots();
     } catch (\Exception $e) {
       $this->logger->error('Error taking snapshot: @message', ['@message' => $e->getMessage()]);
     }
+  }
+
+  /**
+   * Returns snapshot source queries with labels and descriptions.
+   */
+  public function getSourceQueries(): array {
+    $queries = $this->sourceQueries;
+    $this->moduleHandler->alter('makerspace_snapshot_source_queries', $queries);
+    return $queries;
+  }
+
+  /**
+   * Returns dataset-to-query mapping metadata.
+   */
+  public function getDatasetSourceMap(): array {
+    $map = $this->datasetSourceMap;
+    $this->moduleHandler->alter('makerspace_snapshot_dataset_sources', $map);
+    return $map;
   }
 
   public function importSnapshot($definition, $schedule, $snapshot_date, array $payload) {
@@ -238,8 +390,20 @@ class SnapshotService {
           'definition'    => $definition,
           'snapshot_type' => $schedule,
           'snapshot_date' => $snapshot_date,
+          'source'        => 'manual_import',
           'created_at'    => time(),
         ])->execute();
+    }
+    else {
+      $this->database->update('ms_snapshot')
+        ->fields([
+          'snapshot_type' => $schedule,
+          'snapshot_date' => $snapshot_date,
+          'source' => 'manual_import',
+          'created_at' => time(),
+        ])
+        ->condition('id', $snapshot_id)
+        ->execute();
     }
 
     if (!$snapshot_id) {
