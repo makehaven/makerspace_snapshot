@@ -4,7 +4,7 @@ services:
     arguments: ['makerspace_snapshot']
   makerspace_snapshot.snapshot_service:
     class: Drupal\makerspace_snapshot\SnapshotService
-    arguments: ['@database', '@logger.channel.makerspace_snapshot', '@config.factory']
+    arguments: ['@database', '@logger.channel.makerspace_snapshot', '@config.factory', '@module_handler']
   Drupal\makerspace_snapshot\Commands\MakerspaceSnapshotCommands:
     arguments: ['@database', '@logger.channel.makerspace_snapshot', '@makerspace_snapshot.snapshot_service']
     tags:

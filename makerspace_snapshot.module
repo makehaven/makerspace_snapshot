@@ -50,3 +50,39 @@ function makerspace_snapshot_cron() {
     \Drupal::service('makerspace_snapshot.snapshot_service')->takeSnapshot($snapshot_type, FALSE, $snapshot_date);
   }
 }
+
+/**
+ * Responds with KPI values that should be stored during snapshot runs.
+ *
+ * Modules can implement this hook to persist KPI metrics alongside the core
+ * membership counts. The callback receives an associative array with keys:
+ * - snapshot_id: The database ID of the snapshot (may be 0 during collection).
+ * - snapshot_type: Snapshot cadence (monthly, annually, etc.).
+ * - snapshot_date: String date in Y-m-d format (first of month).
+ * - period_start / period_end: Datetime strings delimiting the period.
+ * - members_active / members_paused / members_lapsed / joins / cancels /
+ *   net_change: Aggregate membership counts computed by the snapshot service.
+ * - is_test: Whether the snapshot has been flagged as test data.
+ *
+ * The hook should return an array keyed by KPI machine name. Each value can be
+ * either a scalar metric value or an array with keys:
+ * - value (required): Numeric value to persist.
+ * - period_year (optional): Overrides the default year derived from snapshot_date.
+ * - period_month (optional): Overrides the default month derived from snapshot_date.
+ * - meta (optional): Serializable array of supplementary data.
+ *
+ * @param array $context
+ *   Snapshot context values.
+ *
+ * @return array
+ *   KPI values keyed by KPI ID.
+ */
+function hook_makerspace_snapshot_collect_kpi(array $context): array {
+  return [
+    'total_active_members' => [
+      'value' => $context['members_active'] ?? 0,
+      'period_year' => (int) date('Y', strtotime($context['snapshot_date'])),
+      'period_month' => (int) date('n', strtotime($context['snapshot_date'])),
+    ],
+  ];
+}

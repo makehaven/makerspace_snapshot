@@ -192,6 +192,19 @@ function makerspace_snapshot_update_10002() {
 }
 
 /**
+ * Add KPI snapshot fact table.
+ */
+function makerspace_snapshot_update_10004() {
+  $connection = \Drupal::database();
+  $schema = $connection->schema();
+
+  $definition = makerspace_snapshot_schema()['ms_fact_kpi_snapshot'];
+  if (!$schema->tableExists('ms_fact_kpi_snapshot')) {
+    $schema->createTable('ms_fact_kpi_snapshot', $definition);
+  }
+}
+
+/**
  * Implements hook_install().
  */
 function makerspace_snapshot_install() {
@@ -235,6 +248,15 @@ function makerspace_snapshot_install() {
           'plan_code' => 'DIS',
           'plan_label' => 'Discount',
           'count_members' => 120,
+        ])->execute();
+
+      $connection->insert('ms_fact_kpi_snapshot')
+        ->fields([
+          'snapshot_id' => $snapshot_id,
+          'kpi_id' => 'total_active_members',
+          'metric_value' => 700,
+          'period_year' => (int) date('Y', strtotime($snapshot_date)),
+          'period_month' => (int) date('n', strtotime($snapshot_date)),
         ])->execute();
     }
   }
