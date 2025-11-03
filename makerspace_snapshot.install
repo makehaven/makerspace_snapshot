@@ -202,9 +202,9 @@ function makerspace_snapshot_install() {
     $snapshot_date = (new \DateTimeImmutable('first day of last month'))->format('Y-m-01');
     $snapshot_id = $connection->insert('ms_snapshot')
       ->fields([
+        'definition' => 'membership_totals',
         'snapshot_type' => 'monthly',
         'snapshot_date' => $snapshot_date,
-        'is_test' => 0,
         'created_at' => time(),
       ])
       ->execute();
