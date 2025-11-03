@@ -288,7 +288,9 @@ function makerspace_snapshot_update_10004() {
  * Clear caches to register new routes.
  */
 function makerspace_snapshot_update_10005() {
-  \Drupal::service('router.builder')->rebuild();
+  // This update has been intentionally left empty to prevent a fatal error
+  // during the update process. A safe cache clearing tool has been provided
+  // at /makerspace-snapshot/safe-cache-clear.
 }
 
 /**

@@ -18,6 +18,14 @@ makerspace_snapshot.api.org_level:
       snapshot_type:
         type: string
 
+makerspace_snapshot.safe_cache_clear:
+  path: '/makerspace-snapshot/safe-cache-clear'
+  defaults:
+    _controller: '\Drupal\makerspace_snapshot\Controller\SafeCacheClearController::clearCache'
+    _title: 'Safe Cache Clear'
+  requirements:
+    _permission: 'access content'
+
 makerspace_snapshot.download_template:
   path: '/admin/config/makerspace/snapshot/template/{definition}'
   defaults:
