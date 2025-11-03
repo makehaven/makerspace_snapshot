@@ -52,11 +52,11 @@ class SnapshotService {
    * @param \Drupal\Core\Extension\ModuleHandlerInterface $module_handler
    *   The module handler.
    */
-  public function __construct(Connection $database, LoggerInterface $logger, ConfigFactoryInterface $config_factory, ModuleHandlerInterface $module_handler) {
+  public function __construct(Connection $database, LoggerInterface $logger, ConfigFactoryInterface $config_factory, ModuleHandlerInterface $module_handler = NULL) {
     $this->database = $database;
     $this->logger = $logger;
     $this->configFactory = $config_factory;
-    $this->moduleHandler = $module_handler;
+    $this->moduleHandler = $module_handler ?? \Drupal::moduleHandler();
   }
 
   public function buildDefinitions() {
@@ -94,8 +94,10 @@ class SnapshotService {
    * @param string|null $snapshot_date
    *   The date of the snapshot.
    */
-  public function takeSnapshot($snapshot_type, $snapshot_date = NULL) {
+  public function takeSnapshot($snapshot_type, $is_test = FALSE, $snapshot_date = NULL) {
     try {
+      $isTest = (bool) $is_test;
+
       $snapshotDate = $snapshot_date ?? (new \DateTime())->format('Y-m-d');
       $snapshotDate = (new \DateTimeImmutable($snapshotDate))->format('Y-m-01');
 
