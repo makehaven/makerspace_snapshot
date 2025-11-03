@@ -203,7 +203,7 @@ class SnapshotAdminForm extends ConfigFormBase {
       foreach ($snapshots as $snapshot) {
         $rows[$snapshot->id] = [
           'snapshot_id' => $snapshot->id,
-          'definition' => $snapshot->definition,
+          'definition' => $snapshot->definition ?? 'membership_totals',
           'snapshot_type' => $snapshot->snapshot_type,
           'snapshot_date' => $snapshot->snapshot_date,
           'is_test' => $snapshot->is_test ? $this->t('Yes') : $this->t('No'),
