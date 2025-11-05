@@ -15,7 +15,7 @@ The Makerspace Snapshot module is a Drupal module designed to capture and store 
 ## Installation
 
 1.  **Enable the module:** Install the module as you would any other Drupal module.
-2.  **Configure SQL queries:** Navigate to the snapshot configuration page at `/admin/config/makerspace/snapshot` and update the SQL queries to match your database schema. The module provides default queries that use benign example views, so the UI will render even before a real SQL is provided.
+2.  **Configure SQL queries:** Navigate to `/admin/config/makerspace/snapshot` and review the dataset information on the Snapshot Data Sources tab. Update the SQL queries in the configuration YAML to match your database schema as needed. The module provides default queries that use benign example views, so the UI will render even before a real SQL is provided.
 3.  **Configure snapshot interval:**  Select the desired snapshot interval from the dropdown menu on the configuration page.
 
 ## How to Set Up SQL Views

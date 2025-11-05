@@ -74,13 +74,29 @@ class SnapshotTemplateController extends ControllerBase {
   protected function getExampleData($definition) {
     switch ($definition) {
       case 'membership_totals':
-        return ['2025-01-01', 100, 10, 5];
+        return ['2025-01-01', 100, 10, 5, 110];
       case 'membership_activity':
         return ['2025-01-01', 5, 2, 3];
       case 'event_registrations':
         return ['2025-01-01', 123, 'Intro to Woodworking', '2025-01-15', 12];
       case 'plan_levels':
         return ['2025-01-01', 'basic', 'Basic Plan', 50];
+      case 'membership_types':
+        $definitions = $this->snapshotService->buildDefinitions();
+        $headers = $definitions['membership_types']['headers'] ?? ['snapshot_date', 'members_total'];
+        $example = [];
+        foreach ($headers as $header) {
+          if ($header === 'snapshot_date') {
+            $example[] = '2025-01-01';
+          }
+          elseif ($header === 'members_total') {
+            $example[] = 110;
+          }
+          else {
+            $example[] = 0;
+          }
+        }
+        return $example;
       default:
         return NULL;
     }

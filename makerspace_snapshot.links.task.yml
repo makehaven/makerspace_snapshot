@@ -1,0 +1,23 @@
+makerspace_snapshot.data_sources_tab:
+  route_name: makerspace_snapshot.admin
+  title: 'Snapshot Data Sources'
+  base_route: makerspace_snapshot.admin
+  weight: 0
+
+makerspace_snapshot.snapshots_tab:
+  route_name: makerspace_snapshot.snapshots
+  title: 'Existing Snapshots'
+  base_route: makerspace_snapshot.admin
+  weight: 5
+
+makerspace_snapshot.import_tab:
+  route_name: makerspace_snapshot.import
+  title: 'Import Snapshots'
+  base_route: makerspace_snapshot.admin
+  weight: 10
+
+makerspace_snapshot.manual_tab:
+  route_name: makerspace_snapshot.manual
+  title: 'Manual Snapshot'
+  base_route: makerspace_snapshot.admin
+  weight: 15

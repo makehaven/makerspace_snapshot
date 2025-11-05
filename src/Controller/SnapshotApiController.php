@@ -27,7 +27,7 @@ class SnapshotApiController extends ControllerBase {
     $query = $this->database->select('ms_snapshot', 's');
     $query->join('ms_fact_org_snapshot', 'o', 's.id = o.snapshot_id');
     $query->fields('s', ['snapshot_date']);
-    $query->fields('o', ['members_active', 'members_paused', 'members_lapsed', 'joins', 'cancels', 'net_change']);
+    $query->fields('o', ['members_total', 'members_active', 'members_paused', 'members_lapsed', 'joins', 'cancels', 'net_change']);
     $query->condition('s.snapshot_type', $snapshot_type);
     $query->orderBy('s.snapshot_date', 'ASC');
     $results = $query->execute()->fetchAll(\PDO::FETCH_ASSOC);

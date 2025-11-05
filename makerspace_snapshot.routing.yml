@@ -1,10 +1,46 @@
 makerspace_snapshot.admin:
   path: '/admin/config/makerspace/snapshot'
   defaults:
-    _form: '\Drupal\makerspace_snapshot\Form\SnapshotAdminForm'
-    _title: 'Makerspace Snapshot'
+    _form: '\Drupal\makerspace_snapshot\Form\SnapshotDataSourcesForm'
+    _title: 'Snapshot Data Sources'
   requirements:
     _permission: 'administer site configuration'
+
+makerspace_snapshot.snapshots:
+  path: '/admin/config/makerspace/snapshot/list'
+  defaults:
+    _controller: '\Drupal\makerspace_snapshot\Controller\SnapshotListController::listing'
+    _title: 'Existing Snapshots'
+  requirements:
+    _permission: 'administer site configuration'
+
+makerspace_snapshot.import:
+  path: '/admin/config/makerspace/snapshot/import'
+  defaults:
+    _form: '\Drupal\makerspace_snapshot\Form\SnapshotImportForm'
+    _title: 'Import Snapshots'
+  requirements:
+    _permission: 'administer site configuration'
+
+makerspace_snapshot.manual:
+  path: '/admin/config/makerspace/snapshot/manual'
+  defaults:
+    _form: '\Drupal\makerspace_snapshot\Form\ManualSnapshotForm'
+    _title: 'Manual Snapshot'
+  requirements:
+    _permission: 'administer site configuration'
+
+makerspace_snapshot.snapshot_delete:
+  path: '/admin/config/makerspace/snapshot/{snapshot_id}/delete'
+  defaults:
+    _form: '\Drupal\makerspace_snapshot\Form\SnapshotDeleteForm'
+    _title: 'Delete Snapshot'
+  requirements:
+    _permission: 'administer site configuration'
+  options:
+    parameters:
+      snapshot_id:
+        type: integer
 
 makerspace_snapshot.api.org_level:
   path: '/makerspace-snapshot/api/org-level/{snapshot_type}'
@@ -17,15 +53,6 @@ makerspace_snapshot.api.org_level:
     parameters:
       snapshot_type:
         type: string
-
-makerspace_snapshot.delete_snapshot_ajax:
-  path: '/admin/config/makerspace/snapshot/delete/{snapshot_id}'
-  defaults:
-    _controller: '\Drupal\makerspace_snapshot\Controller\SnapshotAdminController::deleteSnapshotAjax'
-    _title: 'Delete Snapshot'
-  requirements:
-    _permission: 'administer site configuration'
-  methods: [POST]
 
 makerspace_snapshot.safe_cache_clear:
   path: '/makerspace-snapshot/safe-cache-clear'
@@ -77,6 +104,30 @@ makerspace_snapshot.download.membership_activity:
     parameters:
       snapshot_id:
         type: integer
+makerspace_snapshot.download.membership_types:
+  path: '/admin/config/makerspace/snapshot/download-types/{snapshot_id}'
+  defaults:
+    _controller: '\Drupal\makerspace_snapshot\Controller\SnapshotDownloadController::downloadMembershipTypesData'
+    _title: 'Download Membership Types Data'
+  requirements:
+    _permission: 'administer site configuration'
+  options:
+    parameters:
+      snapshot_id:
+        type: integer
+makerspace_snapshot.export_snapshot_package:
+  path: '/admin/config/makerspace/snapshot/export/{snapshot_type}/{snapshot_date}'
+  defaults:
+    _controller: '\Drupal\makerspace_snapshot\Controller\SnapshotDownloadController::exportSnapshotPackage'
+    _title: 'Export Snapshot Package'
+  requirements:
+    _permission: 'administer site configuration'
+  options:
+    parameters:
+      snapshot_type:
+        type: string
+      snapshot_date:
+        type: string
 makerspace_snapshot.api.plan_level:
   path: '/makerspace-snapshot/api/plan-level/{snapshot_type}'
   defaults:
