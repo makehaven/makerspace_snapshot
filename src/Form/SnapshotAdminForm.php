@@ -601,10 +601,7 @@ class SnapshotAdminForm extends ConfigFormBase {
     $filters = $this->normalizeFilters($form_state->getValue('snapshot_filters') ?? []);
     $this->setActiveFilters($form_state, $filters);
     $this->setActiveTab($form_state, 'existing_snapshots');
-
-    $query = array_filter($filters);
-    $query['tab'] = 'existing_snapshots';
-    $form_state->setRedirect('makerspace_snapshot.admin', [], ['query' => $query]);
+    $form_state->setRebuild(TRUE);
   }
 
   public function submitResetFilters(array &$form, FormStateInterface $form_state): void {
