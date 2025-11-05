@@ -94,6 +94,94 @@ function makerspace_snapshot_schema() {
     'primary key' => ['snapshot_id', 'kpi_id'],
   ];
 
+  $schema['ms_fact_donation_snapshot'] = [
+    'description' => 'Donation activity metrics aggregated per snapshot.',
+    'fields' => [
+      'snapshot_id' => ['type' => 'int', 'not null' => TRUE],
+      'period_year' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'period_month' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'donors_count' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'ytd_unique_donors' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'contributions_count' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'recurring_contributions_count' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'onetime_contributions_count' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'recurring_donors_count' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'onetime_donors_count' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'total_amount' => ['type' => 'numeric', 'precision' => 18, 'scale' => 2, 'not null' => TRUE, 'default' => '0.00'],
+      'recurring_amount' => ['type' => 'numeric', 'precision' => 18, 'scale' => 2, 'not null' => TRUE, 'default' => '0.00'],
+      'onetime_amount' => ['type' => 'numeric', 'precision' => 18, 'scale' => 2, 'not null' => TRUE, 'default' => '0.00'],
+    ],
+    'primary key' => ['snapshot_id'],
+    'indexes' => [
+      'period_idx' => ['period_year', 'period_month'],
+    ],
+  ];
+
+  $schema['ms_fact_event_type_snapshot'] = [
+    'description' => 'Aggregated event metrics grouped by event type for each snapshot.',
+    'fields' => [
+      'snapshot_id' => ['type' => 'int', 'not null' => TRUE],
+      'period_year' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'period_month' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'period_quarter' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'event_type_id' => ['type' => 'int', 'not null' => FALSE],
+      'event_type_label' => ['type' => 'varchar', 'length' => 255, 'not null' => TRUE, 'default' => 'Unknown'],
+      'participant_count' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'total_amount' => ['type' => 'numeric', 'precision' => 18, 'scale' => 2, 'not null' => TRUE, 'default' => '0.00'],
+      'average_ticket' => ['type' => 'numeric', 'precision' => 18, 'scale' => 2, 'not null' => TRUE, 'default' => '0.00'],
+    ],
+    'primary key' => ['snapshot_id', 'event_type_label'],
+    'indexes' => [
+      'period_idx' => ['period_year', 'period_quarter', 'period_month'],
+    ],
+  ];
+
+  $schema['ms_fact_survey_snapshot'] = [
+    'description' => 'Annual survey metrics aggregated per snapshot.',
+    'fields' => [
+      'snapshot_id' => ['type' => 'int', 'not null' => TRUE],
+      'period_year' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'period_month' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'period_day' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'timeframe_label' => ['type' => 'varchar', 'length' => 255, 'not null' => TRUE, 'default' => ''],
+      'respondents_count' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'likely_recommend' => ['type' => 'numeric', 'precision' => 6, 'scale' => 2, 'not null' => TRUE, 'default' => '0.00'],
+      'net_promoter_score' => ['type' => 'numeric', 'precision' => 6, 'scale' => 2, 'not null' => TRUE, 'default' => '0.00'],
+      'satisfaction_rating' => ['type' => 'numeric', 'precision' => 6, 'scale' => 2, 'not null' => TRUE, 'default' => '0.00'],
+      'equipment_score' => ['type' => 'numeric', 'precision' => 6, 'scale' => 2, 'not null' => TRUE, 'default' => '0.00'],
+      'learning_resources_score' => ['type' => 'numeric', 'precision' => 6, 'scale' => 2, 'not null' => TRUE, 'default' => '0.00'],
+      'member_events_score' => ['type' => 'numeric', 'precision' => 6, 'scale' => 2, 'not null' => TRUE, 'default' => '0.00'],
+      'paid_workshops_score' => ['type' => 'numeric', 'precision' => 6, 'scale' => 2, 'not null' => TRUE, 'default' => '0.00'],
+      'facility_score' => ['type' => 'numeric', 'precision' => 6, 'scale' => 2, 'not null' => TRUE, 'default' => '0.00'],
+      'community_score' => ['type' => 'numeric', 'precision' => 6, 'scale' => 2, 'not null' => TRUE, 'default' => '0.00'],
+      'vibe_score' => ['type' => 'numeric', 'precision' => 6, 'scale' => 2, 'not null' => TRUE, 'default' => '0.00'],
+    ],
+    'primary key' => ['snapshot_id'],
+    'indexes' => [
+      'period_idx' => ['period_year', 'period_month', 'period_day'],
+    ],
+  ];
+
+  $schema['ms_fact_tool_uptime_snapshot'] = [
+    'description' => 'Tool availability metrics aggregated per snapshot.',
+    'fields' => [
+      'snapshot_id' => ['type' => 'int', 'not null' => TRUE],
+      'period_year' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'period_month' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'period_day' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'total_tools' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'available_tools' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'down_tools' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'maintenance_tools' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'unknown_tools' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'availability_percent' => ['type' => 'numeric', 'precision' => 6, 'scale' => 2, 'not null' => TRUE, 'default' => '0.00'],
+    ],
+    'primary key' => ['snapshot_id'],
+    'indexes' => [
+      'period_idx' => ['period_year', 'period_month', 'period_day'],
+    ],
+  ];
+
   return $schema;
 }
 
@@ -300,7 +388,7 @@ function makerspace_snapshot_update_10003() {
   $schema = $connection->schema();
 
   if ($schema->tableExists('ms_snapshot')) {
-    $schema->addIndex('ms_snapshot', 'type_date', ['snapshot_type', 'snapshot_date']);
+    $schema->addIndex('ms_snapshot', 'type_date', ['snapshot_type', 'snapshot_date'], []);
   }
 }
 
@@ -358,5 +446,94 @@ function makerspace_snapshot_update_10007() {
   $config = \Drupal::configFactory()->getEditable('makerspace_snapshot.sources');
   if (!$config->isNew()) {
     $config->delete();
+  }
+}
+
+/**
+ * Add donation snapshot fact table.
+ */
+function makerspace_snapshot_update_10008() {
+  $connection = \Drupal::database();
+  $schema = $connection->schema();
+  $definition = makerspace_snapshot_schema()['ms_fact_donation_snapshot'];
+
+  if (!$schema->tableExists('ms_fact_donation_snapshot')) {
+    $schema->createTable('ms_fact_donation_snapshot', $definition);
+  }
+}
+
+/**
+ * Add event type snapshot fact table.
+ */
+function makerspace_snapshot_update_10009() {
+  $connection = \Drupal::database();
+  $schema = $connection->schema();
+  $definition = makerspace_snapshot_schema()['ms_fact_event_type_snapshot'];
+
+  if (!$schema->tableExists('ms_fact_event_type_snapshot')) {
+    $schema->createTable('ms_fact_event_type_snapshot', $definition);
+  }
+}
+
+/**
+ * Add survey snapshot fact table.
+ */
+function makerspace_snapshot_update_10010() {
+  $connection = \Drupal::database();
+  $schema = $connection->schema();
+  $definition = makerspace_snapshot_schema()['ms_fact_survey_snapshot'];
+
+  if (!$schema->tableExists('ms_fact_survey_snapshot')) {
+    $schema->createTable('ms_fact_survey_snapshot', $definition);
+  }
+}
+
+/**
+ * Add tool uptime snapshot fact table.
+ */
+function makerspace_snapshot_update_10011() {
+  $connection = \Drupal::database();
+  $schema = $connection->schema();
+  $definition = makerspace_snapshot_schema()['ms_fact_tool_uptime_snapshot'];
+
+  if (!$schema->tableExists('ms_fact_tool_uptime_snapshot')) {
+    $schema->createTable('ms_fact_tool_uptime_snapshot', $definition);
+  }
+}
+
+/**
+ * Add timeframe fields to survey snapshot fact table.
+ */
+function makerspace_snapshot_update_10012() {
+  $connection = \Drupal::database();
+  $schema = $connection->schema();
+
+  if ($schema->tableExists('ms_fact_survey_snapshot')) {
+    if (!$schema->fieldExists('ms_fact_survey_snapshot', 'period_month')) {
+      $schema->addField('ms_fact_survey_snapshot', 'period_month', [
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ]);
+    }
+    if (!$schema->fieldExists('ms_fact_survey_snapshot', 'period_day')) {
+      $schema->addField('ms_fact_survey_snapshot', 'period_day', [
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ]);
+    }
+    if (!$schema->fieldExists('ms_fact_survey_snapshot', 'timeframe_label')) {
+      $schema->addField('ms_fact_survey_snapshot', 'timeframe_label', [
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+      ]);
+    }
+
+    // Update the period index to include month/day if needed.
+    // The existing period_idx index (if present) continues to cover period_year.
+    // Extended indexing can be revisited once month/day filters are required.
   }
 }

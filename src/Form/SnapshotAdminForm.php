@@ -8,6 +8,8 @@ use Drupal\Core\Database\Connection;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Drupal\makerspace_snapshot\SnapshotService;
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Ajax\AjaxResponse;
+use Drupal\Core\Ajax\HtmlCommand;
 use Drupal\Core\Url;
 use Drupal\Component\Utility\Html;
 use Drupal\file\Entity\File;
@@ -77,12 +79,12 @@ class SnapshotAdminForm extends ConfigFormBase {
    */
   public function buildForm(array $form, FormStateInterface $form_state) {
     $request = \Drupal::request();
-    $active_filters = [
-      'type' => (string) $request->query->get('type', ''),
-      'definition' => (string) $request->query->get('definition', ''),
-      'date' => (string) $request->query->get('date', ''),
-    ];
-    $requested_tab = (string) $request->query->get('tab', '');
+    $active_filters = $this->getActiveFilters($form_state);
+    $requested_tab = $this->getActiveTab($form_state);
+    if ($requested_tab === '') {
+      $requested_tab = (string) $request->query->get('tab', '');
+      $this->setActiveTab($form_state, $requested_tab);
+    }
 
     $snapshot_type_form_options = [
       'monthly' => $this->t('Monthly'),
@@ -168,6 +170,8 @@ class SnapshotAdminForm extends ConfigFormBase {
       $active_filters['definition'] = '';
     }
 
+    $this->setActiveFilters($form_state, $active_filters);
+
     if ($requested_tab === '' && array_filter($active_filters)) {
       $requested_tab = 'existing_snapshots';
     }
@@ -177,7 +181,7 @@ class SnapshotAdminForm extends ConfigFormBase {
     $default_tab_id = 'edit-' . str_replace('_', '-', $requested_tab);
 
     $form['description'] = [
-      '#markup' => '<p>' . $this->t('Use this page to configure and trigger snapshots. Reference the <strong>Snapshot SQL</strong> tab for the read-only queries that power each dataset.') . '</p>',
+      '#markup' => '<p>' . $this->t('Use this page to configure and trigger snapshots. Reference the <strong>Snapshot Data Sources</strong> tab for schedules, acquisition methods, and SQL (when available) for each dataset.') . '</p>',
     ];
 
     $form['tabs'] = [
@@ -214,6 +218,7 @@ class SnapshotAdminForm extends ConfigFormBase {
       '#type' => 'submit',
       '#value' => $this->t('Take Snapshot Now'),
       '#name' => 'manual_snapshot_take',
+      '#submit' => ['::submitManualSnapshot'],
     ];
 
     $form['import_snapshot'] = [
@@ -226,10 +231,12 @@ class SnapshotAdminForm extends ConfigFormBase {
         '#markup' => '<p>' . $this->t('Import historical snapshot data from CSV files. You can import data for multiple dates in a single file. Dates will be normalized to the first of the month. Empty numeric values are acceptable and will be treated as 0.') . '</p>',
     ];
 
+    $import_schedule_options = $snapshot_type_form_options + ['specific' => $this->t('Specific date')];
+
     $form['import_snapshot']['import_schedule'] = [
       '#type' => 'select',
       '#title' => $this->t('Snapshot Schedule'),
-      '#options' => $snapshot_type_form_options,
+      '#options' => $import_schedule_options,
       '#default_value' => 'monthly',
     ];
 
@@ -328,6 +335,7 @@ class SnapshotAdminForm extends ConfigFormBase {
       '#name' => 'snapshot_filter_apply',
       '#limit_validation_errors' => [],
       '#button_type' => 'primary',
+      '#submit' => ['::submitApplyFilters'],
     ];
 
     $form['existing_snapshots']['filters']['actions']['reset'] = [
@@ -335,6 +343,7 @@ class SnapshotAdminForm extends ConfigFormBase {
       '#value' => $this->t('Reset'),
       '#name' => 'snapshot_filter_reset',
       '#limit_validation_errors' => [],
+      '#submit' => ['::submitResetFilters'],
     ];
 
     $rows = [];
@@ -403,6 +412,12 @@ class SnapshotAdminForm extends ConfigFormBase {
             'data-snapshot-id' => $snapshot->id,
           ],
           '#snapshot_id' => $snapshot->id,
+          '#submit' => ['::submitDeleteSnapshot'],
+          '#ajax' => [
+            'callback' => '::ajaxDeleteSnapshot',
+            'event' => 'click',
+            'progress' => ['type' => 'throbber', 'message' => $this->t('Removing snapshot...')],
+          ],
         ];
 
         $rows[$snapshot->id] = [
@@ -420,7 +435,12 @@ class SnapshotAdminForm extends ConfigFormBase {
       }
     }
 
-    $form['existing_snapshots']['table'] = [
+    $form['existing_snapshots']['table_wrapper'] = [
+      '#type' => 'container',
+      '#attributes' => ['id' => 'makerspace-snapshot-table-wrapper'],
+    ];
+
+    $form['existing_snapshots']['table_wrapper']['table'] = [
       '#type' => 'table',
       '#header' => $header,
       '#rows' => $rows,
@@ -429,21 +449,24 @@ class SnapshotAdminForm extends ConfigFormBase {
 
     $form['query_information'] = [
       '#type' => 'details',
-      '#title' => $this->t('Snapshot SQL'),
+      '#title' => $this->t('Snapshot Data Sources'),
       '#group' => 'tabs',
     ];
 
     $form['query_information']['intro'] = [
-      '#markup' => '<p>' . $this->t('These read-only definitions show how each snapshot dataset is sourced. Update the codebase to change behavior; modules may also alter the SQL via hooks.') . '</p>',
+      '#markup' => '<p>' . $this->t('Each section lists the source of truth for the dataset, how it is populated, the default schedules, and—when applicable—the SQL queries executed during automated runs.') . '</p>',
     ];
 
     $sourceQueries = $this->snapshotService->getSourceQueries();
     $datasetMap = $this->snapshotService->getDatasetSourceMap();
+    $definitionMetadata = $this->snapshotService->buildDefinitions();
 
     foreach ($datasetMap as $dataset_key => $dataset) {
       $dataset_section = [
         '#type' => 'details',
-        '#title' => $dataset['label'],
+        '#title' => isset($definitionMetadata[$dataset_key]['label'])
+          ? $this->t($definitionMetadata[$dataset_key]['label'])
+          : $dataset['label'],
         '#open' => FALSE,
       ];
 
@@ -453,7 +476,34 @@ class SnapshotAdminForm extends ConfigFormBase {
         ];
       }
 
-      if (!empty($dataset['queries'])) {
+      $definitionInfo = $definitionMetadata[$dataset_key] ?? [];
+      $metaItems = [];
+      if (!empty($definitionInfo['data_source'])) {
+        $metaItems[] = $this->t('Primary source: @source', ['@source' => $this->formatDataSourceLabel($definitionInfo['data_source'])]);
+      }
+      if (!empty($definitionInfo['acquisition'])) {
+        $metaItems[] = $this->t('Acquisition: @mode', ['@mode' => $this->formatAcquisitionLabel($definitionInfo['acquisition'])]);
+      }
+      if (!empty($definitionInfo['schedules']) && is_array($definitionInfo['schedules'])) {
+        $metaItems[] = $this->t('Default schedules: @list', ['@list' => $this->formatScheduleList($definitionInfo['schedules'])]);
+      }
+
+      if ($metaItems) {
+        $dataset_section['metadata'] = [
+          '#theme' => 'item_list',
+          '#items' => $metaItems,
+          '#attributes' => ['class' => ['snapshot-dataset-meta']],
+        ];
+      }
+
+      $acquisitionMode = $definitionInfo['acquisition'] ?? 'automated';
+
+      if ($acquisitionMode !== 'automated') {
+        $dataset_section['placeholder'] = [
+          '#markup' => '<p><em>' . $this->getAcquisitionPlaceholderMessage($acquisitionMode) . '</em></p>',
+        ];
+      }
+      elseif (!empty($dataset['queries'])) {
         $dataset_section['queries'] = [
           '#type' => 'container',
           '#attributes' => ['class' => ['snapshot-dataset-queries']],
@@ -483,7 +533,7 @@ class SnapshotAdminForm extends ConfigFormBase {
           ];
         }
       }
-      else {
+      elseif ($acquisitionMode === 'automated') {
         $dataset_section['placeholder'] = [
           '#markup' => '<p><em>' . $this->t('No automated SQL source has been implemented for this dataset yet.') . '</em></p>',
         ];
@@ -499,49 +549,13 @@ class SnapshotAdminForm extends ConfigFormBase {
    * {@inheritdoc}
    */
   public function submitForm(array &$form, FormStateInterface $form_state) {
-    $user_input = $form_state->getUserInput() ?? [];
-    $filters_input = $form_state->getValue('snapshot_filters') ?? [];
-    $trigger = $form_state->getTriggeringElement();
-    $trigger_name = $trigger['#name'] ?? '';
-    $current_filters = [
-      'type' => isset($filters_input['type']) && is_string($filters_input['type']) ? $filters_input['type'] : '',
-      'definition' => isset($filters_input['definition']) && is_string($filters_input['definition']) ? $filters_input['definition'] : '',
-      'date' => isset($filters_input['date']) && is_string($filters_input['date']) ? $filters_input['date'] : '',
-    ];
-
-    if ($trigger_name === 'snapshot_filter_reset') {
-      $form_state->setRedirect('makerspace_snapshot.admin', [], [
-        'query' => ['tab' => 'existing_snapshots'],
-      ]);
-      return;
-    }
-
-    if ($trigger_name === 'snapshot_filter_apply') {
-      $query = array_filter($current_filters, static function ($value) {
-        return $value !== NULL && $value !== '';
-      });
-      $query['tab'] = 'existing_snapshots';
-      $form_state->setRedirect('makerspace_snapshot.admin', [], ['query' => $query]);
-      return;
-    }
-
-    if (!empty($trigger['#snapshot_id'])) {
-      $this->handleSnapshotDeletion((int) $trigger['#snapshot_id'], $form_state);
-      return;
-    }
-
-    if ($trigger_name === 'manual_snapshot_take') {
-      $this->handleManualSnapshot($form_state);
-      return;
-    }
-
-    parent::submitForm($form, $form_state);
+    // All actions are handled by dedicated submit handlers.
   }
 
   /**
    * Handles manual snapshot submissions.
    */
-  protected function handleManualSnapshot(FormStateInterface $form_state): void {
+  public function submitManualSnapshot(array &$form, FormStateInterface $form_state): void {
     $snapshotType = $form_state->getValue('snapshot_type');
     $isTest = $form_state->getValue('is_test');
     $definitions_input = $form_state->getValue('snapshot_definitions') ?? [];
@@ -566,6 +580,8 @@ class SnapshotAdminForm extends ConfigFormBase {
 
     $this->snapshotService->takeSnapshot($snapshotType, $isTest, NULL, 'manual_form', $selected_definitions);
 
+    $this->messenger()->deleteAll();
+
     $definition_labels = array_map(function ($definition) use ($available_definition_options) {
       return $available_definition_options[$definition] ?? $definition;
     }, $selected_definitions);
@@ -574,37 +590,92 @@ class SnapshotAdminForm extends ConfigFormBase {
       '%type' => $snapshotType,
       '%definitions' => implode(', ', $definition_labels),
     ]));
-    $query = $this->buildFilterQueryFromRequest();
+    $this->setActiveTab($form_state, 'manual_snapshot');
+    $filters = $this->getActiveFilters($form_state);
+    $query = array_filter($filters);
     $query['tab'] = 'manual_snapshot';
-    $form_state->setRedirect('makerspace_snapshot.admin', [], [
-      'query' => $query,
-    ]);
+    $form_state->setRedirect('makerspace_snapshot.admin', [], ['query' => $query]);
   }
 
-  protected function handleSnapshotDeletion(int $snapshot_id, FormStateInterface $form_state): void {
+  public function submitApplyFilters(array &$form, FormStateInterface $form_state): void {
+    $filters = $this->normalizeFilters($form_state->getValue('snapshot_filters') ?? []);
+    $this->setActiveFilters($form_state, $filters);
+    $this->setActiveTab($form_state, 'existing_snapshots');
+
+    $query = array_filter($filters);
+    $query['tab'] = 'existing_snapshots';
+    $form_state->setRedirect('makerspace_snapshot.admin', [], ['query' => $query]);
+  }
+
+  public function submitResetFilters(array &$form, FormStateInterface $form_state): void {
+    $this->setActiveFilters($form_state, []);
+    $this->setActiveTab($form_state, 'existing_snapshots');
+    $form_state->setRedirect('makerspace_snapshot.admin', [], ['query' => ['tab' => 'existing_snapshots']]);
+  }
+
+  public function submitDeleteSnapshot(array &$form, FormStateInterface $form_state): void {
+    $trigger = $form_state->getTriggeringElement();
+    $snapshot_id = (int) ($trigger['#snapshot_id'] ?? 0);
+    if (!$snapshot_id) {
+      return;
+    }
+
     try {
       $this->snapshotService->deleteSnapshot($snapshot_id);
+      if (isset($trigger['#ajax'])) {
+        $this->messenger()->deleteAll();
+      }
       $this->messenger()->addStatus($this->t('Snapshot with ID %id has been deleted.', ['%id' => $snapshot_id]));
-      $query = $this->buildFilterQueryFromRequest();
-      $query['tab'] = 'existing_snapshots';
-      $form_state->setRedirect('makerspace_snapshot.admin', [], [
-        'query' => $query,
-      ]);
     }
     catch (\Exception $e) {
+      $this->logger('makerspace_snapshot')->error('Snapshot deletion failed for ID @id: @message', ['@id' => $snapshot_id, '@message' => $e->getMessage()]);
       $this->messenger()->addError($this->t('An error occurred while deleting the snapshot.'));
-      $query = $this->buildFilterQueryFromRequest();
-      $query['tab'] = 'existing_snapshots';
-      $form_state->setRedirect('makerspace_snapshot.admin', [], [
-        'query' => $query,
-      ]);
     }
+
+    $this->setActiveTab($form_state, 'existing_snapshots');
+
+    if (isset($trigger['#ajax'])) {
+      $form_state->setRebuild(TRUE);
+    }
+    else {
+      $filters = $this->getActiveFilters($form_state);
+      $query = array_filter($filters);
+      $query['tab'] = 'existing_snapshots';
+      $form_state->setRedirect('makerspace_snapshot.admin', [], ['query' => $query]);
+    }
+  }
+
+  public function ajaxDeleteSnapshot(array &$form, FormStateInterface $form_state): AjaxResponse {
+    $response = new AjaxResponse();
+    $trigger = $form_state->getTriggeringElement();
+    $snapshot_id = (int) ($trigger['#snapshot_id'] ?? 0);
+
+    $response->addCommand(new HtmlCommand('#makerspace-snapshot-table-wrapper', $form['existing_snapshots']['table_wrapper']));
+
+    $messages = $this->messenger()->all();
+    $this->messenger()->deleteAll();
+    $render_messages = [
+      '#theme' => 'status_messages',
+      '#message_list' => $messages,
+      '#status_headings' => [
+        'status' => $this->t('Status message'),
+        'warning' => $this->t('Warning message'),
+        'error' => $this->t('Error message'),
+      ],
+    ];
+    $response->addCommand(new HtmlCommand('#drupal-messages', $render_messages));
+
+    return $response;
   }
 
   /**
    * Builds a human-friendly label for a snapshot definition.
    */
   protected function formatDefinitionLabel(string $definition): string {
+    $definitions = $this->snapshotService->buildDefinitions();
+    if (isset($definitions[$definition]['label'])) {
+      return (string) $this->t($definitions[$definition]['label']);
+    }
     $label = str_replace('_', ' ', $definition);
     return ucwords($label);
   }
@@ -647,8 +718,8 @@ class SnapshotAdminForm extends ConfigFormBase {
   protected function getManualSnapshotDefinitionOptions(): array {
     $definitions = [];
     foreach ($this->snapshotService->buildDefinitions() as $definition_key => $info) {
-      // Skip definitions that are only populated via imports for now.
-      if ($definition_key === 'event_registrations') {
+      $acquisition = $info['acquisition'] ?? 'automated';
+      if ($acquisition !== 'automated') {
         continue;
       }
       $definitions[$definition_key] = $this->formatDefinitionLabel($definition_key);
@@ -657,20 +728,108 @@ class SnapshotAdminForm extends ConfigFormBase {
   }
 
   /**
-   * Builds query parameters preserving the active filter selections.
+   * Formats a human-readable data source label.
    */
-  protected function buildFilterQueryFromRequest(): array {
+  protected function formatDataSourceLabel(string $source): string {
+    switch (strtolower($source)) {
+      case 'drupal sql':
+        return (string) $this->t('Drupal SQL');
+      case 'civicrm sql':
+        return (string) $this->t('CiviCRM SQL');
+      case 'manual import':
+        return (string) $this->t('Manual Import');
+      case 'external api':
+        return (string) $this->t('External API');
+      default:
+        return (string) $this->t('@source', ['@source' => $source]);
+    }
+  }
+
+  /**
+   * Formats acquisition mode labels.
+   */
+  protected function formatAcquisitionLabel(string $acquisition): string {
+    switch (strtolower($acquisition)) {
+      case 'automated':
+        return (string) $this->t('Automated');
+      case 'import':
+        return (string) $this->t('Manual Import');
+      case 'placeholder':
+        return (string) $this->t('Planned Integration');
+      default:
+        return (string) $this->t('@mode', ['@mode' => $acquisition]);
+    }
+  }
+
+  /**
+   * Formats schedule arrays into a comma-separated list.
+   */
+  protected function formatScheduleList(array $schedules): string {
+    if (empty($schedules)) {
+      return (string) $this->t('None');
+    }
+    $labels = array_map(function ($schedule) {
+      return $this->formatTypeLabel((string) $schedule);
+    }, $schedules);
+    return implode(', ', $labels);
+  }
+
+  /**
+   * Provides contextual messaging when SQL is unavailable.
+   */
+  protected function getAcquisitionPlaceholderMessage(string $acquisition): string {
+    switch (strtolower($acquisition)) {
+      case 'import':
+        return (string) $this->t('This dataset is populated via manual import, so no SQL preview is available.');
+      case 'placeholder':
+        return (string) $this->t('This dataset is planned for a future integration. Data collection will begin once the source is wired.');
+      default:
+        return (string) $this->t('No automated SQL source has been implemented for this dataset yet.');
+    }
+  }
+
+  protected function normalizeFilters(array $filters): array {
+    return [
+      'type' => isset($filters['type']) ? (string) $filters['type'] : '',
+      'definition' => isset($filters['definition']) ? (string) $filters['definition'] : '',
+      'date' => isset($filters['date']) ? (string) $filters['date'] : '',
+    ];
+  }
+
+  protected function getActiveFilters(FormStateInterface $form_state): array {
+    if ($form_state->has('active_filters')) {
+      return $this->normalizeFilters($form_state->get('active_filters'));
+    }
+
     $request = \Drupal::request();
-    $query = [
-      'type' => $request->query->get('type'),
-      'definition' => $request->query->get('definition'),
-      'date' => $request->query->get('date'),
-      'tab' => $request->query->get('tab'),
+    $filters = [
+      'type' => (string) $request->query->get('type', ''),
+      'definition' => (string) $request->query->get('definition', ''),
+      'date' => (string) $request->query->get('date', ''),
     ];
 
-    return array_filter($query, static function ($value) {
-      return $value !== NULL && $value !== '';
-    });
+    $filters = $this->normalizeFilters($filters);
+    $form_state->set('active_filters', $filters);
+    return $filters;
+  }
+
+  protected function setActiveFilters(FormStateInterface $form_state, array $filters): void {
+    $form_state->set('active_filters', $this->normalizeFilters($filters));
+  }
+
+  protected function getActiveTab(FormStateInterface $form_state): string {
+    if ($form_state->has('active_tab')) {
+      return (string) $form_state->get('active_tab');
+    }
+
+    $request = \Drupal::request();
+    $tab = (string) $request->query->get('tab', '');
+    $form_state->set('active_tab', $tab);
+    return $tab;
+  }
+
+  protected function setActiveTab(FormStateInterface $form_state, string $tab): void {
+    $form_state->set('active_tab', $tab);
   }
 
   public function submitImportSnapshot(array &$form, FormStateInterface $form_state) {

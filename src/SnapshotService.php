@@ -55,8 +55,12 @@ SELECT u.uid AS member_id,
        'MEMBER' AS plan_code,
        'Member' AS plan_label
 FROM users_field_data u
-INNER JOIN user__roles r ON u.uid = r.entity_id
-WHERE r.roles_target_id = 'member' AND u.status = 1
+INNER JOIN user__roles r ON u.uid = r.entity_id AND r.roles_target_id = 'member'
+LEFT JOIN user__field_chargebee_payment_pause cb_pause ON cb_pause.entity_id = u.uid AND cb_pause.deleted = 0
+LEFT JOIN user__field_manual_pause manual_pause ON manual_pause.entity_id = u.uid AND manual_pause.deleted = 0
+WHERE u.status = 1
+  AND COALESCE(cb_pause.field_chargebee_payment_pause_value, 0) = 0
+  AND COALESCE(manual_pause.field_manual_pause_value, 0) = 0
 SQL,
     ],
     'sql_paused' => [
@@ -67,8 +71,14 @@ SELECT u.uid AS member_id,
        'MEMBER_PAUSED' AS plan_code,
        'Member (Paused)' AS plan_label
 FROM users_field_data u
-INNER JOIN user__roles r ON u.uid = r.entity_id
-WHERE r.roles_target_id = 'member_paused' AND u.status = 1
+INNER JOIN user__roles r ON u.uid = r.entity_id AND r.roles_target_id = 'member'
+LEFT JOIN user__field_chargebee_payment_pause cb_pause ON cb_pause.entity_id = u.uid AND cb_pause.deleted = 0
+LEFT JOIN user__field_manual_pause manual_pause ON manual_pause.entity_id = u.uid AND manual_pause.deleted = 0
+WHERE u.status = 1
+  AND (
+    COALESCE(cb_pause.field_chargebee_payment_pause_value, 0) = 1
+    OR COALESCE(manual_pause.field_manual_pause_value, 0) = 1
+  )
 SQL,
     ],
     'sql_lapsed' => [
@@ -132,10 +142,152 @@ SQL,
       'description' => 'Counts active members by plan code using the active member snapshot.',
       'queries' => ['sql_active'],
     ],
+    'donation_metrics' => [
+      'label' => 'Donation Metrics',
+      'description' => 'Aggregates donor and contribution metrics for the reporting period.',
+      'queries' => [],
+    ],
+    'event_type_metrics' => [
+      'label' => 'Event Type Metrics',
+      'description' => 'Summarizes counted event registrations and revenue by event type.',
+      'queries' => [],
+    ],
+    'survey_metrics' => [
+      'label' => 'Annual Survey Metrics',
+      'description' => 'Stores imported satisfaction and recommendation scores from the annual member survey.',
+      'queries' => [],
+    ],
+    'tool_availability' => [
+      'label' => 'Tool Availability Metrics',
+      'description' => 'Placeholder entry for future asset_status-driven uptime calculations.',
+      'queries' => [],
+    ],
     'event_registrations' => [
       'label' => 'Event Registrations',
       'description' => 'Currently populated via CSV import. No automated SQL source has been implemented yet.',
       'queries' => [],
+    ],
+  ];
+
+  /**
+   * Dataset metadata keyed by definition machine name.
+   */
+  protected array $datasetDefinitions = [
+    'membership_totals' => [
+      'label' => 'Membership Totals',
+      'schedules' => ['monthly', 'quarterly', 'annually'],
+      'headers' => ['snapshot_date', 'members_active', 'members_paused', 'members_lapsed'],
+      'dataset_type' => 'membership_totals',
+      'acquisition' => 'automated',
+      'data_source' => 'Drupal SQL',
+    ],
+    'membership_activity' => [
+      'label' => 'Membership Activity',
+      'schedules' => ['monthly', 'quarterly', 'annually'],
+      'headers' => ['snapshot_date', 'joins', 'cancels', 'net_change'],
+      'dataset_type' => 'membership_activity',
+      'acquisition' => 'automated',
+      'data_source' => 'Drupal SQL',
+    ],
+    'donation_metrics' => [
+      'label' => 'Donation Metrics',
+      'schedules' => ['monthly'],
+      'headers' => [
+        'snapshot_date',
+        'period_year',
+        'period_month',
+        'donors_count',
+        'ytd_unique_donors',
+        'contributions_count',
+        'recurring_contributions_count',
+        'onetime_contributions_count',
+        'recurring_donors_count',
+        'onetime_donors_count',
+        'total_amount',
+        'recurring_amount',
+        'onetime_amount',
+      ],
+      'dataset_type' => 'donation_metrics',
+      'acquisition' => 'automated',
+      'data_source' => 'CiviCRM SQL',
+    ],
+    'event_registrations' => [
+      'label' => 'Event Registrations',
+      'schedules' => ['daily'],
+      'headers' => ['snapshot_date', 'event_id', 'event_title', 'event_start_date', 'registration_count'],
+      'dataset_type' => 'event_registrations',
+      'acquisition' => 'import',
+      'data_source' => 'Manual Import',
+    ],
+    'plan_levels' => [
+      'label' => 'Membership Plan Levels',
+      'schedules' => ['monthly', 'quarterly', 'annually'],
+      'headers' => ['snapshot_date', 'plan_code', 'plan_label', 'count_members'],
+      'dataset_type' => 'plan_levels',
+      'acquisition' => 'automated',
+      'data_source' => 'Drupal SQL',
+    ],
+    'event_type_metrics' => [
+      'label' => 'Event Type Metrics',
+      'schedules' => ['monthly', 'quarterly', 'annually'],
+      'headers' => [
+        'snapshot_date',
+        'period_year',
+        'period_quarter',
+        'period_month',
+        'event_type_id',
+        'event_type_label',
+        'participant_count',
+        'total_amount',
+        'average_ticket',
+      ],
+      'dataset_type' => 'event_type_metrics',
+      'acquisition' => 'automated',
+      'data_source' => 'CiviCRM SQL',
+    ],
+    'survey_metrics' => [
+      'label' => 'Member Survey Metrics',
+      'schedules' => ['annually'],
+      'headers' => [
+        'snapshot_date',
+        'period_year',
+        'period_month',
+        'period_day',
+        'timeframe_label',
+        'respondents_count',
+        'likely_recommend',
+        'net_promoter_score',
+        'satisfaction_rating',
+        'equipment_score',
+        'learning_resources_score',
+        'member_events_score',
+        'paid_workshops_score',
+        'facility_score',
+        'community_score',
+        'vibe_score',
+      ],
+      'dataset_type' => 'survey_metrics',
+      'acquisition' => 'import',
+      'data_source' => 'Manual Import',
+    ],
+    'tool_availability' => [
+      'label' => 'Tool Availability Metrics',
+      'schedules' => ['daily', 'monthly'],
+      'headers' => [
+        'snapshot_date',
+        'period_year',
+        'period_month',
+        'period_day',
+        'total_tools',
+        'available_tools',
+        'down_tools',
+        'maintenance_tools',
+        'unknown_tools',
+        'availability_percent',
+      ],
+      'dataset_type' => 'tool_availability',
+      'acquisition' => 'placeholder',
+      'data_source' => 'External API',
     ],
   ];
 
@@ -159,28 +311,7 @@ SQL,
   }
 
   public function buildDefinitions() {
-    return [
-      'membership_totals' => [
-        'schedules' => ['monthly', 'quarterly', 'annually'],
-        'headers' => ['snapshot_date', 'members_active', 'members_paused', 'members_lapsed'],
-        'dataset_type' => 'membership_totals',
-      ],
-      'membership_activity' => [
-        'schedules' => ['monthly', 'quarterly', 'annually'],
-        'headers' => ['snapshot_date', 'joins', 'cancels', 'net_change'],
-        'dataset_type' => 'membership_activity',
-      ],
-      'event_registrations' => [
-        'schedules' => ['daily'],
-        'headers' => ['snapshot_date', 'event_id', 'event_title', 'event_start_date', 'registration_count'],
-        'dataset_type' => 'event_registrations',
-      ],
-      'plan_levels' => [
-        'schedules' => [],
-        'headers' => ['snapshot_date', 'plan_code', 'plan_label', 'count_members'],
-        'dataset_type' => 'plan_levels',
-      ],
-    ];
+    return $this->datasetDefinitions;
   }
 
   /**
@@ -204,14 +335,29 @@ SQL,
       $snapshotDate = $snapshot_date ?? (new \DateTime())->format('Y-m-d');
       $snapshotDate = (new \DateTimeImmutable($snapshotDate))->format('Y-m-01');
 
-      $periodStart = (new \DateTimeImmutable($snapshotDate))->setTime(0,0,0)->format('Y-m-d H:i:s');
-      $periodEnd   = (new \DateTimeImmutable($snapshotDate))->modify('last day of this month')->setTime(23,59,59)->format('Y-m-d H:i:s');
+      $periodBounds = $this->resolvePeriodBounds(new \DateTimeImmutable($snapshotDate), $snapshot_type);
+      $periodStartObject = $periodBounds['start'];
+      $periodEndObject = $periodBounds['end'];
+      $periodStart = $periodStartObject->format('Y-m-d H:i:s');
+      $periodEnd = $periodEndObject->format('Y-m-d H:i:s');
 
-      $supportedDefinitions = ['membership_totals', 'membership_activity', 'plan_levels'];
-      $selectedDefinitions = $definitions ?? $supportedDefinitions;
-      $selectedDefinitions = array_values(array_intersect($supportedDefinitions, $selectedDefinitions));
+      $supportedDefinitions = array_keys($this->datasetDefinitions);
+      $requestedDefinitions = $definitions ?? $supportedDefinitions;
+      $selectedDefinitions = array_values(array_intersect($supportedDefinitions, $requestedDefinitions));
       if (empty($selectedDefinitions)) {
         $selectedDefinitions = $supportedDefinitions;
+      }
+
+      $isSystemRun = ($source === 'system');
+      if ($isSystemRun) {
+        $selectedDefinitions = array_values(array_filter($selectedDefinitions, function (string $definition): bool {
+          return ($this->datasetDefinitions[$definition]['acquisition'] ?? 'automated') === 'automated';
+        }));
+      }
+
+      if (empty($selectedDefinitions)) {
+        $this->logger->warning('No eligible dataset definitions selected for snapshot type @type using source @source.', ['@type' => $snapshot_type, '@source' => $source]);
+        return;
       }
 
       $sourceQueries = $this->getSourceQueries();
@@ -328,6 +474,76 @@ SQL,
         }
       }
 
+      if (isset($snapshotIds['donation_metrics'])) {
+        $donationMetrics = $this->calculateDonationMetrics($periodStartObject, $periodEndObject);
+        if (!empty($donationMetrics)) {
+          $this->database->insert('ms_fact_donation_snapshot')
+            ->fields([
+              'snapshot_id' => $snapshotIds['donation_metrics'],
+              'period_year' => (int) $periodStartObject->format('Y'),
+              'period_month' => (int) $periodStartObject->format('m'),
+              'donors_count' => $donationMetrics['donors_count'],
+              'ytd_unique_donors' => $donationMetrics['ytd_unique_donors'],
+              'contributions_count' => $donationMetrics['contributions_count'],
+              'recurring_contributions_count' => $donationMetrics['recurring_contributions_count'],
+              'onetime_contributions_count' => $donationMetrics['onetime_contributions_count'],
+              'recurring_donors_count' => $donationMetrics['recurring_donors_count'],
+              'onetime_donors_count' => $donationMetrics['onetime_donors_count'],
+              'total_amount' => $donationMetrics['total_amount'],
+              'recurring_amount' => $donationMetrics['recurring_amount'],
+              'onetime_amount' => $donationMetrics['onetime_amount'],
+            ])
+            ->execute();
+        }
+      }
+
+      if (isset($snapshotIds['event_type_metrics'])) {
+        $eventTypeMetrics = $this->calculateEventTypeMetrics($periodStartObject, $periodEndObject);
+        if (!empty($eventTypeMetrics)) {
+          $normalizedType = strtolower((string) $snapshot_type);
+          $periodYear = (int) $periodStartObject->format('Y');
+          $monthValue = (int) $periodStartObject->format('n');
+          $periodMonth = $normalizedType === 'annually' ? 0 : $monthValue;
+          $periodQuarter = $normalizedType === 'annually' ? 0 : (int) ceil($monthValue / 3);
+
+          foreach ($eventTypeMetrics as $metric) {
+            $this->database->insert('ms_fact_event_type_snapshot')
+              ->fields([
+                'snapshot_id' => $snapshotIds['event_type_metrics'],
+                'period_year' => $periodYear,
+                'period_quarter' => $periodQuarter,
+                'period_month' => $periodMonth,
+                'event_type_id' => $metric['event_type_id'],
+                'event_type_label' => $metric['event_type_label'],
+                'participant_count' => $metric['participant_count'],
+                'total_amount' => $metric['total_amount'],
+                'average_ticket' => $metric['average_ticket'],
+              ])
+              ->execute();
+          }
+        }
+      }
+
+      if (isset($snapshotIds['tool_availability'])) {
+        $toolMetrics = $this->calculateToolAvailabilityMetrics($periodStartObject, $periodEndObject);
+        if (!empty($toolMetrics)) {
+          $this->database->insert('ms_fact_tool_uptime_snapshot')
+            ->fields([
+              'snapshot_id' => $snapshotIds['tool_availability'],
+              'period_year' => $toolMetrics['period_year'],
+              'period_month' => $toolMetrics['period_month'],
+              'period_day' => $toolMetrics['period_day'],
+              'total_tools' => $toolMetrics['total_tools'],
+              'available_tools' => $toolMetrics['available_tools'],
+              'down_tools' => $toolMetrics['down_tools'],
+              'maintenance_tools' => $toolMetrics['maintenance_tools'],
+              'unknown_tools' => $toolMetrics['unknown_tools'],
+              'availability_percent' => $toolMetrics['availability_percent'],
+            ])
+            ->execute();
+        }
+      }
+
       if (isset($snapshotIds['membership_totals'])) {
         $snapshot_id = $snapshotIds['membership_totals'];
         $kpiContext = [
@@ -418,8 +634,20 @@ SQL,
       case 'membership_activity':
         $this->importMembershipActivitySnapshot($snapshot_id, $payload);
         break;
+      case 'donation_metrics':
+        $this->importDonationMetricsSnapshot($snapshot_id, $payload);
+        break;
       case 'event_registrations':
         $this->importEventSnapshot($snapshot_id, $payload);
+        break;
+      case 'event_type_metrics':
+        $this->importEventTypeMetricsSnapshot($snapshot_id, $payload);
+        break;
+      case 'survey_metrics':
+        $this->importSurveyMetricsSnapshot($snapshot_id, $payload);
+        break;
+      case 'tool_availability':
+        $this->importToolAvailabilitySnapshot($snapshot_id, $payload);
         break;
     }
 
@@ -460,6 +688,34 @@ SQL,
       ])->execute();
   }
 
+  protected function importDonationMetricsSnapshot($snapshot_id, array $payload) {
+    $metrics = $payload['metrics'] ?? [];
+    if (!is_array($metrics) || empty($metrics)) {
+      return;
+    }
+
+    $fields = [
+      'snapshot_id' => $snapshot_id,
+      'period_year' => (int) ($metrics['period_year'] ?? date('Y')),
+      'period_month' => (int) ($metrics['period_month'] ?? 0),
+      'donors_count' => (int) ($metrics['donors_count'] ?? 0),
+      'ytd_unique_donors' => (int) ($metrics['ytd_unique_donors'] ?? 0),
+      'contributions_count' => (int) ($metrics['contributions_count'] ?? 0),
+      'recurring_contributions_count' => (int) ($metrics['recurring_contributions_count'] ?? 0),
+      'onetime_contributions_count' => (int) ($metrics['onetime_contributions_count'] ?? 0),
+      'recurring_donors_count' => (int) ($metrics['recurring_donors_count'] ?? 0),
+      'onetime_donors_count' => (int) ($metrics['onetime_donors_count'] ?? 0),
+      'total_amount' => round((float) ($metrics['total_amount'] ?? 0), 2),
+      'recurring_amount' => round((float) ($metrics['recurring_amount'] ?? 0), 2),
+      'onetime_amount' => round((float) ($metrics['onetime_amount'] ?? 0), 2),
+    ];
+
+    $this->database->merge('ms_fact_donation_snapshot')
+      ->key(['snapshot_id' => $snapshot_id])
+      ->fields($fields)
+      ->execute();
+  }
+
   protected function importEventSnapshot($snapshot_id, array $payload) {
     foreach ($payload['events'] as $event) {
       $this->database->merge('ms_fact_event_snapshot')
@@ -470,6 +726,88 @@ SQL,
           'registration_count' => $event['registration_count'],
         ])->execute();
     }
+  }
+
+  protected function importEventTypeMetricsSnapshot($snapshot_id, array $payload) {
+    if (empty($payload['event_types']) || !is_array($payload['event_types'])) {
+      return;
+    }
+
+    $this->database->delete('ms_fact_event_type_snapshot')
+      ->condition('snapshot_id', $snapshot_id)
+      ->execute();
+
+    foreach ($payload['event_types'] as $row) {
+      $this->database->insert('ms_fact_event_type_snapshot')
+        ->fields([
+          'snapshot_id' => $snapshot_id,
+          'period_year' => (int) ($row['period_year'] ?? 0),
+          'period_quarter' => (int) ($row['period_quarter'] ?? 0),
+          'period_month' => (int) ($row['period_month'] ?? 0),
+          'event_type_id' => isset($row['event_type_id']) && $row['event_type_id'] !== '' ? (int) $row['event_type_id'] : NULL,
+          'event_type_label' => (string) ($row['event_type_label'] ?? 'Unknown'),
+          'participant_count' => (int) ($row['participant_count'] ?? 0),
+          'total_amount' => round((float) ($row['total_amount'] ?? 0), 2),
+          'average_ticket' => round((float) ($row['average_ticket'] ?? 0), 2),
+        ])
+        ->execute();
+    }
+  }
+
+  protected function importSurveyMetricsSnapshot($snapshot_id, array $payload) {
+    $metrics = $payload['metrics'] ?? [];
+    if (!is_array($metrics) || empty($metrics)) {
+      return;
+    }
+
+    $fields = [
+      'snapshot_id' => $snapshot_id,
+      'period_year' => (int) ($metrics['period_year'] ?? date('Y')),
+      'period_month' => (int) ($metrics['period_month'] ?? 0),
+      'period_day' => (int) ($metrics['period_day'] ?? 0),
+      'timeframe_label' => (string) ($metrics['timeframe_label'] ?? ''),
+      'respondents_count' => (int) ($metrics['respondents_count'] ?? 0),
+      'likely_recommend' => round((float) ($metrics['likely_recommend'] ?? 0), 2),
+      'net_promoter_score' => round((float) ($metrics['net_promoter_score'] ?? 0), 2),
+      'satisfaction_rating' => round((float) ($metrics['satisfaction_rating'] ?? 0), 2),
+      'equipment_score' => round((float) ($metrics['equipment_score'] ?? 0), 2),
+      'learning_resources_score' => round((float) ($metrics['learning_resources_score'] ?? 0), 2),
+      'member_events_score' => round((float) ($metrics['member_events_score'] ?? 0), 2),
+      'paid_workshops_score' => round((float) ($metrics['paid_workshops_score'] ?? 0), 2),
+      'facility_score' => round((float) ($metrics['facility_score'] ?? 0), 2),
+      'community_score' => round((float) ($metrics['community_score'] ?? 0), 2),
+      'vibe_score' => round((float) ($metrics['vibe_score'] ?? 0), 2),
+    ];
+
+    $this->database->merge('ms_fact_survey_snapshot')
+      ->key(['snapshot_id' => $snapshot_id])
+      ->fields($fields)
+      ->execute();
+  }
+
+  protected function importToolAvailabilitySnapshot($snapshot_id, array $payload) {
+    $metrics = $payload['metrics'] ?? [];
+    if (!is_array($metrics) || empty($metrics)) {
+      return;
+    }
+
+    $fields = [
+      'snapshot_id' => $snapshot_id,
+      'period_year' => (int) ($metrics['period_year'] ?? date('Y')),
+      'period_month' => (int) ($metrics['period_month'] ?? 0),
+      'period_day' => (int) ($metrics['period_day'] ?? 0),
+      'total_tools' => (int) ($metrics['total_tools'] ?? 0),
+      'available_tools' => (int) ($metrics['available_tools'] ?? 0),
+      'down_tools' => (int) ($metrics['down_tools'] ?? 0),
+      'maintenance_tools' => (int) ($metrics['maintenance_tools'] ?? 0),
+      'unknown_tools' => (int) ($metrics['unknown_tools'] ?? 0),
+      'availability_percent' => round((float) ($metrics['availability_percent'] ?? 0), 2),
+    ];
+
+    $this->database->merge('ms_fact_tool_uptime_snapshot')
+      ->key(['snapshot_id' => $snapshot_id])
+      ->fields($fields)
+      ->execute();
   }
 
   /**
@@ -508,7 +846,315 @@ SQL,
       ->condition('snapshot_id', $snapshot_ids, 'IN')
       ->execute();
 
+    $this->database->delete('ms_fact_membership_activity')
+      ->condition('snapshot_id', $snapshot_ids, 'IN')
+      ->execute();
+
+    $this->database->delete('ms_fact_donation_snapshot')
+      ->condition('snapshot_id', $snapshot_ids, 'IN')
+      ->execute();
+
+    $this->database->delete('ms_fact_event_type_snapshot')
+      ->condition('snapshot_id', $snapshot_ids, 'IN')
+      ->execute();
+
+    $this->database->delete('ms_fact_survey_snapshot')
+      ->condition('snapshot_id', $snapshot_ids, 'IN')
+      ->execute();
+
+    $this->database->delete('ms_fact_event_snapshot')
+      ->condition('snapshot_id', $snapshot_ids, 'IN')
+      ->execute();
+
+    $this->database->delete('ms_fact_kpi_snapshot')
+      ->condition('snapshot_id', $snapshot_ids, 'IN')
+      ->execute();
+
     $this->logger->info('Pruned @count snapshots older than @date.', ['@count' => count($snapshot_ids), '@date' => $retention_date]);
+  }
+
+  /**
+   * Computes inclusive period bounds for the snapshot cadence.
+   */
+  protected function resolvePeriodBounds(\DateTimeImmutable $snapshotDate, string $snapshotType): array {
+    $normalized = strtolower($snapshotType);
+    $start = $snapshotDate->setTime(0, 0, 0);
+    switch ($normalized) {
+      case 'quarterly':
+        $year = (int) $start->format('Y');
+        $month = (int) $start->format('n');
+        $quarterIndex = (int) floor(($month - 1) / 3);
+        $quarterStartMonth = ($quarterIndex * 3) + 1;
+        $start = $start->setDate($year, $quarterStartMonth, 1);
+        $end = $start->modify('+2 months')->modify('last day of this month')->setTime(23, 59, 59);
+        break;
+
+      case 'annually':
+        $year = (int) $start->format('Y');
+        $start = $start->setDate($year, 1, 1);
+        $end = $start->setDate($year, 12, 31)->setTime(23, 59, 59);
+        break;
+
+      default:
+        $end = $start->modify('last day of this month')->setTime(23, 59, 59);
+        break;
+    }
+
+    return [
+      'start' => $start,
+      'end' => $end,
+    ];
+  }
+
+  /**
+   * Aggregates event metrics grouped by event type for the reporting window.
+   */
+  protected function calculateEventTypeMetrics(\DateTimeImmutable $periodStart, \DateTimeImmutable $periodEnd): array {
+    $schema = $this->database->schema();
+    if (
+      !$schema->tableExists('civicrm_participant') ||
+      !$schema->tableExists('civicrm_event') ||
+      !$schema->tableExists('civicrm_participant_status_type') ||
+      !$schema->tableExists('civicrm_participant_payment') ||
+      !$schema->tableExists('civicrm_contribution')
+    ) {
+      return [];
+    }
+
+    $eventTypeGroupId = $this->getOptionGroupId('event_type');
+    $contributionStatusGroupId = $this->getOptionGroupId('contribution_status');
+
+    $query = $this->database->select('civicrm_participant', 'p');
+    $query->innerJoin('civicrm_event', 'e', 'e.id = p.event_id');
+    $query->innerJoin('civicrm_participant_status_type', 'pst', 'pst.id = p.status_id');
+    $query->leftJoin('civicrm_participant_payment', 'pp', 'pp.participant_id = p.id');
+    $query->leftJoin('civicrm_contribution', 'c', 'c.id = pp.contribution_id');
+
+    if ($eventTypeGroupId) {
+      $query->leftJoin('civicrm_option_value', 'ov', 'ov.option_group_id = ' . (int) $eventTypeGroupId . ' AND ov.value = e.event_type_id');
+    }
+    else {
+      $query->leftJoin('civicrm_option_value', 'ov', 'ov.value = e.event_type_id');
+    }
+
+    if ($contributionStatusGroupId) {
+      $query->leftJoin('civicrm_option_value', 'cs', 'cs.option_group_id = ' . (int) $contributionStatusGroupId . ' AND cs.value = c.contribution_status_id');
+    }
+
+    $query->condition('pst.is_counted', 1);
+    $query->condition('pst.is_cancelled', 0);
+    $query->condition('e.start_date', [$periodStart->format('Y-m-d H:i:s'), $periodEnd->format('Y-m-d H:i:s')], 'BETWEEN');
+
+    $query->addExpression('COALESCE(ov.value, e.event_type_id)', 'event_type_id');
+    $query->addExpression("COALESCE(ov.label, CONCAT('Type ', e.event_type_id))", 'event_type_label');
+    $query->addExpression('COUNT(DISTINCT p.id)', 'participant_count');
+
+    $revenueArgs = [];
+    if ($contributionStatusGroupId) {
+      $disallowedNames = ['cancelled', 'refunded', 'pending refund', 'pending_refund', 'chargeback', 'failed'];
+      $placeholders = [];
+      foreach ($disallowedNames as $index => $statusName) {
+        $placeholder = ':disallowed_status_' . $index;
+        $placeholders[] = $placeholder;
+        $revenueArgs[$placeholder] = strtolower($statusName);
+      }
+      if ($placeholders) {
+        $placeholderString = implode(', ', $placeholders);
+        $revenueExpression = "SUM(CASE WHEN c.id IS NULL OR COALESCE(c.is_test, 0) = 1 THEN 0 WHEN LOWER(cs.name) IN ($placeholderString) THEN 0 ELSE COALESCE(c.total_amount, 0) END)";
+      }
+      else {
+        $revenueExpression = 'SUM(CASE WHEN c.id IS NULL OR COALESCE(c.is_test, 0) = 1 THEN 0 ELSE COALESCE(c.total_amount, 0) END)';
+      }
+    }
+    else {
+      $disallowedIds = [3, 7, 8, 9];
+      $placeholders = [];
+      foreach ($disallowedIds as $index => $statusId) {
+        $placeholder = ':disallowed_status_id_' . $index;
+        $placeholders[] = $placeholder;
+        $revenueArgs[$placeholder] = $statusId;
+      }
+      if ($placeholders) {
+        $placeholderString = implode(', ', $placeholders);
+        $revenueExpression = "SUM(CASE WHEN c.id IS NULL OR COALESCE(c.is_test, 0) = 1 THEN 0 WHEN c.contribution_status_id IN ($placeholderString) THEN 0 ELSE COALESCE(c.total_amount, 0) END)";
+      }
+      else {
+        $revenueExpression = 'SUM(CASE WHEN c.id IS NULL OR COALESCE(c.is_test, 0) = 1 THEN 0 ELSE COALESCE(c.total_amount, 0) END)';
+      }
+    }
+
+    $query->addExpression($revenueExpression, 'total_revenue', $revenueArgs);
+
+    $query->groupBy('event_type_id');
+    $query->groupBy('event_type_label');
+    $query->orderBy('event_type_label', 'ASC');
+
+    $records = $query->execute();
+
+    $metrics = [];
+    foreach ($records as $record) {
+      $participants = (int) $record->participant_count;
+      $totalAmount = round((float) $record->total_revenue, 2);
+      $label = trim((string) $record->event_type_label) !== '' ? (string) $record->event_type_label : 'Unknown';
+      $eventTypeId = isset($record->event_type_id) && $record->event_type_id !== '' ? (int) $record->event_type_id : NULL;
+      $average = $participants > 0 ? round($totalAmount / $participants, 2) : 0.0;
+
+      if ($participants === 0 && $totalAmount === 0.0) {
+        continue;
+      }
+
+      $metrics[] = [
+        'event_type_id' => $eventTypeId,
+        'event_type_label' => $label,
+        'participant_count' => $participants,
+        'total_amount' => $totalAmount,
+        'average_ticket' => $average,
+      ];
+    }
+
+    return $metrics;
+  }
+
+  /**
+   * Placeholder tool availability metrics until asset_status aggregation lands.
+   */
+  protected function calculateToolAvailabilityMetrics(\DateTimeImmutable $periodStart, \DateTimeImmutable $periodEnd): array {
+    $periodYear = (int) $periodStart->format('Y');
+    $periodMonth = (int) $periodStart->format('n');
+    $periodDay = (int) $periodStart->format('j');
+
+    $metrics = [
+      'period_year' => $periodYear,
+      'period_month' => $periodMonth,
+      'period_day' => $periodDay,
+      'total_tools' => 0,
+      'available_tools' => 0,
+      'down_tools' => 0,
+      'maintenance_tools' => 0,
+      'unknown_tools' => 0,
+      'availability_percent' => 0.0,
+    ];
+
+    if (!$this->moduleHandler->moduleExists('asset_status')) {
+      return $metrics;
+    }
+
+    // @todo Leverage asset_status once uptime calculation APIs are available.
+    return $metrics;
+  }
+
+  /**
+   * Returns the option group ID for a given CiviCRM option group name.
+   */
+  protected function getOptionGroupId(string $groupName): ?int {
+    static $cache = [];
+    $key = strtolower($groupName);
+
+    if (array_key_exists($key, $cache)) {
+      return $cache[$key];
+    }
+
+    $schema = $this->database->schema();
+    if (!$schema->tableExists('civicrm_option_group')) {
+      $cache[$key] = NULL;
+      return NULL;
+    }
+
+    $query = $this->database->select('civicrm_option_group', 'og')
+      ->fields('og', ['id'])
+      ->condition('og.name', $groupName);
+    $id = $query->execute()->fetchField();
+    $cache[$key] = $id ? (int) $id : NULL;
+
+    return $cache[$key];
+  }
+
+  /**
+   * Computes donation metrics for the given reporting window.
+   */
+  protected function calculateDonationMetrics(\DateTimeImmutable $periodStart, \DateTimeImmutable $periodEnd): array {
+    $schema = $this->database->schema();
+    if (!$schema->tableExists('civicrm_contribution')) {
+      return [
+        'donors_count' => 0,
+        'ytd_unique_donors' => 0,
+        'contributions_count' => 0,
+        'recurring_contributions_count' => 0,
+        'onetime_contributions_count' => 0,
+        'recurring_donors_count' => 0,
+        'onetime_donors_count' => 0,
+        'total_amount' => 0.0,
+        'recurring_amount' => 0.0,
+        'onetime_amount' => 0.0,
+      ];
+    }
+
+    $start = $periodStart->format('Y-m-d H:i:s');
+    $end = $periodEnd->format('Y-m-d H:i:s');
+
+    $baseQuery = $this->database->select('civicrm_contribution', 'c');
+    $baseQuery->addExpression('COUNT(DISTINCT c.id)', 'contribution_count');
+    $baseQuery->addExpression('COUNT(DISTINCT IF(c.contribution_recur_id IS NOT NULL AND c.contribution_recur_id <> 0, c.id, NULL))', 'recurring_contribution_count');
+    $baseQuery->addExpression('COUNT(DISTINCT c.contact_id)', 'donor_count');
+    $baseQuery->addExpression('COUNT(DISTINCT IF(c.contribution_recur_id IS NOT NULL AND c.contribution_recur_id <> 0, c.contact_id, NULL))', 'recurring_donor_count');
+    $baseQuery->addExpression('COUNT(DISTINCT IF(c.contribution_recur_id IS NULL OR c.contribution_recur_id = 0, c.contact_id, NULL))', 'onetime_donor_count');
+    $baseQuery->addExpression('SUM(COALESCE(c.total_amount, 0))', 'total_amount');
+    $baseQuery->addExpression('SUM(IF(c.contribution_recur_id IS NOT NULL AND c.contribution_recur_id <> 0, COALESCE(c.total_amount, 0), 0))', 'recurring_amount');
+    $baseQuery->condition('c.receive_date', [$start, $end], 'BETWEEN');
+    $baseQuery->condition('c.contribution_status_id', 1);
+    $baseQuery->condition('c.is_test', 0);
+    $baseQuery->condition('COALESCE(c.total_amount, 0)', 0, '>');
+    $baseQuery->isNotNull('c.contact_id');
+
+    $result = $baseQuery->execute()->fetchObject();
+
+    if (!$result) {
+      return [
+        'donors_count' => 0,
+        'ytd_unique_donors' => 0,
+        'contributions_count' => 0,
+        'recurring_contributions_count' => 0,
+        'onetime_contributions_count' => 0,
+        'recurring_donors_count' => 0,
+        'onetime_donors_count' => 0,
+        'total_amount' => 0.0,
+        'recurring_amount' => 0.0,
+        'onetime_amount' => 0.0,
+      ];
+    }
+
+    $contributionsCount = (int) ($result->contribution_count ?? 0);
+    $recurringContributionsCount = (int) ($result->recurring_contribution_count ?? 0);
+    $donorsCount = (int) ($result->donor_count ?? 0);
+    $recurringDonorsCount = (int) ($result->recurring_donor_count ?? 0);
+    $oneTimeDonorsCount = (int) ($result->onetime_donor_count ?? 0);
+    $totalAmount = (float) ($result->total_amount ?? 0.0);
+    $recurringAmount = (float) ($result->recurring_amount ?? 0.0);
+    $oneTimeAmount = max(0.0, $totalAmount - $recurringAmount);
+    $oneTimeContributionsCount = max(0, $contributionsCount - $recurringContributionsCount);
+
+    $yearStart = $periodEnd->setDate((int) $periodEnd->format('Y'), 1, 1)->setTime(0, 0, 0);
+    $ytdQuery = $this->database->select('civicrm_contribution', 'c');
+    $ytdQuery->addExpression('COUNT(DISTINCT c.contact_id)', 'donor_count');
+    $ytdQuery->condition('c.receive_date', [$yearStart->format('Y-m-d H:i:s'), $end], 'BETWEEN');
+    $ytdQuery->condition('c.contribution_status_id', 1);
+    $ytdQuery->condition('c.is_test', 0);
+    $ytdQuery->condition('COALESCE(c.total_amount, 0)', 0, '>');
+    $ytdQuery->isNotNull('c.contact_id');
+    $ytdUniqueDonors = (int) $ytdQuery->execute()->fetchField();
+
+    return [
+      'donors_count' => $donorsCount,
+      'ytd_unique_donors' => $ytdUniqueDonors,
+      'contributions_count' => $contributionsCount,
+      'recurring_contributions_count' => $recurringContributionsCount,
+      'onetime_contributions_count' => $oneTimeContributionsCount,
+      'recurring_donors_count' => $recurringDonorsCount,
+      'onetime_donors_count' => $oneTimeDonorsCount,
+      'total_amount' => $totalAmount,
+      'recurring_amount' => $recurringAmount,
+      'onetime_amount' => $oneTimeAmount,
+    ];
   }
 
   /**
@@ -645,7 +1291,19 @@ SQL,
       $this->database->delete('ms_fact_membership_activity')
         ->condition('snapshot_id', $snapshot_id)
         ->execute();
+      $this->database->delete('ms_fact_donation_snapshot')
+        ->condition('snapshot_id', $snapshot_id)
+        ->execute();
+      $this->database->delete('ms_fact_event_type_snapshot')
+        ->condition('snapshot_id', $snapshot_id)
+        ->execute();
+      $this->database->delete('ms_fact_survey_snapshot')
+        ->condition('snapshot_id', $snapshot_id)
+        ->execute();
       $this->database->delete('ms_fact_event_snapshot')
+        ->condition('snapshot_id', $snapshot_id)
+        ->execute();
+      $this->database->delete('ms_fact_kpi_snapshot')
         ->condition('snapshot_id', $snapshot_id)
         ->execute();
 
