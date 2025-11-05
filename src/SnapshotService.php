@@ -7,6 +7,7 @@ use Drupal\Core\Cache\Cache;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Extension\ModuleHandlerInterface;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
 
 /**
  * Service description.
@@ -40,6 +41,20 @@ class SnapshotService {
    * @var \Drupal\Core\Extension\ModuleHandlerInterface
    */
   protected ModuleHandlerInterface $moduleHandler;
+
+  /**
+   * Entity type manager.
+   *
+   * @var \Drupal\Core\Entity\EntityTypeManagerInterface
+   */
+  protected EntityTypeManagerInterface $entityTypeManager;
+
+  /**
+   * Cached membership type term info.
+   *
+   * @var array|null
+   */
+  protected ?array $membershipTypeTerms = NULL;
 
   /**
    * Canonical SQL queries used to build snapshots.
@@ -142,6 +157,11 @@ SQL,
       'description' => 'Counts active members by plan code using the active member snapshot.',
       'queries' => ['sql_active'],
     ],
+    'membership_types' => [
+      'label' => 'Membership Types',
+      'description' => 'Breaks down current members by membership type taxonomy terms.',
+      'queries' => ['sql_active', 'sql_paused'],
+    ],
     'donation_metrics' => [
       'label' => 'Donation Metrics',
       'description' => 'Aggregates donor and contribution metrics for the reporting period.',
@@ -176,7 +196,7 @@ SQL,
     'membership_totals' => [
       'label' => 'Membership Totals',
       'schedules' => ['monthly', 'quarterly', 'annually'],
-      'headers' => ['snapshot_date', 'members_active', 'members_paused', 'members_lapsed'],
+      'headers' => ['snapshot_date', 'members_active', 'members_paused', 'members_lapsed', 'members_total'],
       'dataset_type' => 'membership_totals',
       'acquisition' => 'automated',
       'data_source' => 'Drupal SQL',
@@ -224,6 +244,14 @@ SQL,
       'schedules' => ['monthly', 'quarterly', 'annually'],
       'headers' => ['snapshot_date', 'plan_code', 'plan_label', 'count_members'],
       'dataset_type' => 'plan_levels',
+      'acquisition' => 'automated',
+      'data_source' => 'Drupal SQL',
+    ],
+    'membership_types' => [
+      'label' => 'Membership Types',
+      'schedules' => ['monthly', 'quarterly', 'annually'],
+      'headers' => ['snapshot_date', 'members_total'],
+      'dataset_type' => 'membership_types',
       'acquisition' => 'automated',
       'data_source' => 'Drupal SQL',
     ],
@@ -303,15 +331,25 @@ SQL,
    * @param \Drupal\Core\Extension\ModuleHandlerInterface $module_handler
    *   The module handler.
    */
-  public function __construct(Connection $database, LoggerInterface $logger, ConfigFactoryInterface $config_factory, ?ModuleHandlerInterface $module_handler = NULL) {
+  public function __construct(Connection $database, LoggerInterface $logger, ConfigFactoryInterface $config_factory, ?ModuleHandlerInterface $module_handler = NULL, ?EntityTypeManagerInterface $entity_type_manager = NULL) {
     $this->database = $database;
     $this->logger = $logger;
     $this->configFactory = $config_factory;
     $this->moduleHandler = $module_handler ?? \Drupal::moduleHandler();
+    $this->entityTypeManager = $entity_type_manager ?? \Drupal::entityTypeManager();
   }
 
   public function buildDefinitions() {
-    return $this->datasetDefinitions;
+    $definitions = $this->datasetDefinitions;
+    if (isset($definitions['membership_types'])) {
+      $terms = $this->getMembershipTypeTerms();
+      $headers = ['snapshot_date', 'members_total'];
+      foreach ($terms as $tid => $info) {
+        $headers[] = 'membership_type_' . $tid;
+      }
+      $definitions['membership_types']['headers'] = $headers;
+    }
+    return $definitions;
   }
 
   /**
@@ -400,9 +438,15 @@ SQL,
       $members_active = count($active);
       $members_paused = count($paused);
       $members_lapsed = count($lapsed);
+      $members_total = $members_active + $members_paused;
       $joins_count    = count($joins);
       $cancels_count  = count($cancels);
       $net_change     = $joins_count - $cancels_count;
+
+      $membershipTypeData = [];
+      if (in_array('membership_types', $selectedDefinitions, TRUE)) {
+        $membershipTypeData = $this->calculateMembershipTypeBreakdown($active, $paused);
+      }
 
       // Create snapshot metadata rows per definition.
       $snapshotIds = [];
@@ -432,6 +476,7 @@ SQL,
         $this->database->insert('ms_fact_org_snapshot')
           ->fields([
             'snapshot_id'    => $snapshotIds['membership_totals'],
+            'members_total'  => $members_total,
             'members_active' => $members_active,
             'members_paused' => $members_paused,
             'members_lapsed' => $members_lapsed,
@@ -439,6 +484,32 @@ SQL,
             'cancels'        => 0,
             'net_change'     => 0,
           ])->execute();
+      }
+
+      if (isset($snapshotIds['membership_types'])) {
+        $snapshot_id = $snapshotIds['membership_types'];
+        $this->database->delete('ms_fact_membership_type_snapshot')
+          ->condition('snapshot_id', $snapshot_id)
+          ->execute();
+
+        $terms = $membershipTypeData['terms'] ?? [];
+        $counts = $membershipTypeData['counts'] ?? [];
+        if (empty($terms)) {
+          $terms = [0 => ['label' => 'All Members']];
+          $counts = [0 => $members_total];
+        }
+        foreach ($terms as $tid => $info) {
+          $label = $info['label'] ?? ('Membership Type ' . $tid);
+          $count = $counts[$tid] ?? 0;
+          $this->database->insert('ms_fact_membership_type_snapshot')
+            ->fields([
+              'snapshot_id' => $snapshot_id,
+              'term_id' => $tid,
+              'term_label' => $label,
+              'members_total' => $members_total,
+              'member_count' => $count,
+            ])->execute();
+        }
       }
 
       if (isset($snapshotIds['membership_activity'])) {
@@ -552,6 +623,7 @@ SQL,
           'snapshot_date' => $snapshotDate,
           'period_start' => $periodStart,
           'period_end' => $periodEnd,
+          'members_total' => $members_total,
           'members_active' => $members_active,
           'members_paused' => $members_paused,
           'members_lapsed' => $members_lapsed,
@@ -591,6 +663,403 @@ SQL,
     $map = $this->datasetSourceMap;
     $this->moduleHandler->alter('makerspace_snapshot_dataset_sources', $map);
     return $map;
+  }
+
+  /**
+   * Returns snapshot export options keyed by "type|date".
+   */
+  public function getSnapshotExportOptions(): array {
+    $options = [];
+    $query = $this->database->select('ms_snapshot', 's')
+      ->fields('s', ['snapshot_type', 'snapshot_date'])
+      ->distinct()
+      ->orderBy('snapshot_date', 'DESC')
+      ->orderBy('snapshot_type', 'ASC');
+    $results = $query->execute();
+    foreach ($results as $row) {
+      $type = (string) ($row->snapshot_type ?? '');
+      $date = (string) $row->snapshot_date;
+      if ($date === '') {
+        continue;
+      }
+      $key = $type . '|' . $date;
+      $options[$key] = $this->formatTypeLabel($type ?: 'monthly') . ' – ' . $this->formatSnapshotDateLabel($date);
+    }
+    return $options;
+  }
+
+  /**
+   * Gathers snapshot data for export across supported definitions.
+   */
+  public function getSnapshotExportData(string $snapshot_type, string $snapshot_date): array {
+    try {
+      $normalizedDate = (new \DateTimeImmutable($snapshot_date))->format('Y-m-01');
+    }
+    catch (\Exception $e) {
+      $normalizedDate = $snapshot_date;
+    }
+
+    $snapshotRows = $this->database->select('ms_snapshot', 's')
+      ->fields('s', ['id', 'definition'])
+      ->condition('snapshot_type', $snapshot_type)
+      ->condition('snapshot_date', $normalizedDate)
+      ->execute()
+      ->fetchAllAssoc('definition');
+
+    if (empty($snapshotRows)) {
+      return [];
+    }
+
+    $definitions = $this->buildDefinitions();
+    $data = [];
+
+    // Membership totals.
+    if (isset($definitions['membership_totals'])) {
+      $header = $definitions['membership_totals']['headers'];
+      $values = array_fill_keys($header, 0);
+      $values['snapshot_date'] = $normalizedDate;
+      $totalsId = $snapshotRows['membership_totals']->id ?? NULL;
+      if ($totalsId) {
+        $record = $this->database->select('ms_fact_org_snapshot', 'o')
+          ->fields('o')
+          ->condition('snapshot_id', $totalsId)
+          ->execute()
+          ->fetchAssoc() ?: [];
+        foreach (['members_total', 'members_active', 'members_paused', 'members_lapsed', 'joins', 'cancels', 'net_change'] as $key) {
+          if (isset($record[$key]) && isset($values[$key])) {
+            $values[$key] = (int) $record[$key];
+          }
+        }
+      }
+      $data['membership_totals'] = [
+        'filename' => 'membership_totals.csv',
+        'header' => $header,
+        'rows' => [array_values($values)],
+      ];
+    }
+
+    // Membership activity.
+    if (isset($definitions['membership_activity'])) {
+      $header = $definitions['membership_activity']['headers'];
+      $values = array_fill_keys($header, 0);
+      $values['snapshot_date'] = $normalizedDate;
+      $activityId = $snapshotRows['membership_activity']->id ?? NULL;
+      if ($activityId) {
+        $record = $this->database->select('ms_fact_membership_activity', 'a')
+          ->fields('a')
+          ->condition('snapshot_id', $activityId)
+          ->execute()
+          ->fetchAssoc() ?: [];
+        foreach (['joins', 'cancels', 'net_change'] as $key) {
+          if (isset($record[$key])) {
+            $values[$key] = (int) $record[$key];
+          }
+        }
+      }
+      $data['membership_activity'] = [
+        'filename' => 'membership_activity.csv',
+        'header' => $header,
+        'rows' => [array_values($values)],
+      ];
+    }
+
+    // Plan levels.
+    if (isset($definitions['plan_levels'])) {
+      $header = $definitions['plan_levels']['headers'];
+      $rows = [];
+      $planId = $snapshotRows['plan_levels']->id ?? NULL;
+      if ($planId) {
+        $result = $this->database->select('ms_fact_plan_snapshot', 'p')
+          ->fields('p', ['plan_code', 'plan_label', 'count_members'])
+          ->condition('snapshot_id', $planId)
+          ->orderBy('plan_code')
+          ->execute();
+        foreach ($result as $record) {
+          $rows[] = [
+            $normalizedDate,
+            $record->plan_code,
+            $record->plan_label,
+            (int) $record->count_members,
+          ];
+        }
+      }
+      $data['plan_levels'] = [
+        'filename' => 'plan_levels.csv',
+        'header' => $header,
+        'rows' => $rows,
+      ];
+    }
+
+    // Event registrations.
+    if (isset($definitions['event_registrations'])) {
+      $header = $definitions['event_registrations']['headers'];
+      $rows = [];
+      $eventId = $snapshotRows['event_registrations']->id ?? NULL;
+      if ($eventId) {
+        $result = $this->database->select('ms_fact_event_snapshot', 'e')
+          ->fields('e', ['event_id', 'event_title', 'event_start_date', 'registration_count'])
+          ->condition('snapshot_id', $eventId)
+          ->orderBy('event_start_date')
+          ->execute();
+        foreach ($result as $record) {
+          $rows[] = [
+            $normalizedDate,
+            $record->event_id,
+            $record->event_title,
+            $record->event_start_date,
+            (int) $record->registration_count,
+          ];
+        }
+      }
+      $data['event_registrations'] = [
+        'filename' => 'event_registrations.csv',
+        'header' => $header,
+        'rows' => $rows,
+      ];
+    }
+
+    // Membership types.
+    if (isset($definitions['membership_types'])) {
+      $header = $definitions['membership_types']['headers'];
+      $columns = $this->getMembershipTypeTerms();
+      $counts = [];
+      $membersTotal = 0;
+      $typesId = $snapshotRows['membership_types']->id ?? NULL;
+      if ($typesId) {
+        $result = $this->database->select('ms_fact_membership_type_snapshot', 'm')
+          ->fields('m', ['term_id', 'term_label', 'members_total', 'member_count'])
+          ->condition('snapshot_id', $typesId)
+          ->execute();
+        foreach ($result as $record) {
+          $tid = (int) $record->term_id;
+          $counts[$tid] = (int) $record->member_count;
+          if (!isset($columns[$tid])) {
+            $columns[$tid] = ['label' => $record->term_label ?: ('Membership Type ' . $tid)];
+          }
+          if (!$membersTotal && !empty($record->members_total)) {
+            $membersTotal = (int) $record->members_total;
+          }
+        }
+      }
+      if (!$membersTotal && isset($data['membership_totals']['rows'][0])) {
+        $totalsHeader = $data['membership_totals']['header'];
+        $totalsRow = $data['membership_totals']['rows'][0];
+        $index = array_search('members_total', $totalsHeader, TRUE);
+        if ($index !== FALSE && isset($totalsRow[$index])) {
+          $membersTotal = (int) $totalsRow[$index];
+        }
+      }
+      if (!$membersTotal && !empty($counts)) {
+        $membersTotal = array_sum($counts);
+      }
+
+      $row = [];
+      foreach ($header as $column) {
+        if ($column === 'snapshot_date') {
+          $row[] = $normalizedDate;
+        }
+        elseif ($column === 'members_total') {
+          $row[] = $membersTotal;
+        }
+        elseif (strpos($column, 'membership_type_') === 0) {
+          $tid = (int) substr($column, strlen('membership_type_'));
+          $row[] = $counts[$tid] ?? 0;
+        }
+        else {
+          $row[] = '';
+        }
+      }
+      $labels = [];
+      foreach ($columns as $tid => $info) {
+        $labels[(int) $tid] = $info['label'] ?? ('Membership Type ' . $tid);
+      }
+
+      $data['membership_types'] = [
+        'filename' => 'membership_types.csv',
+        'header' => $header,
+        'rows' => [$row],
+        'labels' => $labels,
+      ];
+    }
+
+    return $data;
+  }
+
+  /**
+   * Returns membership type term metadata keyed by term ID.
+   */
+  protected function getMembershipTypeTerms(): array {
+    if ($this->membershipTypeTerms !== NULL) {
+      return $this->membershipTypeTerms;
+    }
+
+    $config = $this->configFactory->getEditable('makerspace_snapshot.membership_types');
+    $stored = $config->get('columns') ?? [];
+    $columns = [];
+    foreach ($stored as $item) {
+      $tid = isset($item['tid']) ? (int) $item['tid'] : 0;
+      if ($tid <= 0) {
+        continue;
+      }
+      $columns[$tid] = [
+        'label' => $item['label'] ?? ('Membership Type ' . $tid),
+      ];
+    }
+
+    $dirty = FALSE;
+
+    $targetBundles = [];
+    try {
+      $field = $this->entityTypeManager
+        ->getStorage('field_config')
+        ->load('profile.main.field_membership_type');
+      if ($field) {
+        $settings = $field->getSetting('handler_settings') ?? [];
+        if (!empty($settings['target_bundles']) && is_array($settings['target_bundles'])) {
+          $targetBundles = array_keys($settings['target_bundles']);
+        }
+      }
+    }
+    catch (\Exception $e) {
+      $this->logger->error('Unable to load field configuration for membership types: @message', ['@message' => $e->getMessage()]);
+    }
+
+    try {
+      $term_storage = $this->entityTypeManager->getStorage('taxonomy_term');
+      $query = $term_storage->getQuery()->accessCheck(FALSE);
+      if (!empty($targetBundles)) {
+        $query->condition('vid', $targetBundles, 'IN');
+      }
+      $query->condition('status', 1);
+      $query->sort('tid');
+      $term_ids = $query->execute();
+      if (!empty($term_ids)) {
+        $term_entities = $term_storage->loadMultiple($term_ids);
+        foreach ($term_entities as $term) {
+          $tid = (int) $term->id();
+          $label = $term->label();
+          if (!isset($columns[$tid])) {
+            $columns[$tid] = ['label' => $label];
+            $dirty = TRUE;
+          }
+          elseif ($columns[$tid]['label'] !== $label) {
+            $columns[$tid]['label'] = $label;
+            $dirty = TRUE;
+          }
+        }
+      }
+    }
+    catch (\Exception $e) {
+      $this->logger->error('Unable to load membership type taxonomy terms: @message', ['@message' => $e->getMessage()]);
+    }
+
+    ksort($columns);
+
+    if ($dirty) {
+      $this->saveMembershipTypeTerms($columns);
+    }
+
+    $this->membershipTypeTerms = $columns;
+    return $columns;
+  }
+
+  /**
+   * Calculates membership type counts for the supplied member rows.
+   */
+  protected function calculateMembershipTypeBreakdown(array $activeRows, array $pausedRows): array {
+    $terms = $this->getMembershipTypeTerms();
+    $counts = [];
+    foreach (array_keys($terms) as $tid) {
+      $counts[$tid] = 0;
+    }
+
+    $member_ids = [];
+    foreach ([$activeRows, $pausedRows] as $rows) {
+      foreach ($rows as $row) {
+        $member_id = isset($row['member_id']) ? (int) $row['member_id'] : 0;
+        if ($member_id) {
+          $member_ids[$member_id] = TRUE;
+        }
+      }
+    }
+
+    if (empty($member_ids) || empty($terms)) {
+      return [
+        'counts' => $counts,
+        'terms' => $terms,
+      ];
+    }
+
+    $member_ids = array_keys($member_ids);
+
+    $configUpdated = FALSE;
+
+    try {
+      $query = $this->database->select('profile', 'p')
+        ->condition('p.type', 'main')
+        ->condition('p.status', 1)
+        ->condition('p.uid', $member_ids, 'IN');
+      $query->join('profile__field_membership_type', 'mt', 'mt.entity_id = p.profile_id');
+      $query->fields('mt', ['field_membership_type_target_id']);
+      $result = $query->execute();
+
+      foreach ($result as $record) {
+        $tid = (int) $record->field_membership_type_target_id;
+        if (!isset($counts[$tid])) {
+          $counts[$tid] = 0;
+          try {
+            $term = $this->entityTypeManager->getStorage('taxonomy_term')->load($tid);
+            if ($term) {
+              $terms[$tid] = ['label' => $term->label()];
+              $configUpdated = TRUE;
+            }
+            elseif (!isset($terms[$tid])) {
+              $terms[$tid] = ['label' => 'Membership Type ' . $tid];
+              $configUpdated = TRUE;
+            }
+          }
+          catch (\Exception $e) {
+            if (!isset($terms[$tid])) {
+              $terms[$tid] = ['label' => 'Membership Type ' . $tid];
+              $configUpdated = TRUE;
+            }
+            $this->logger->error('Unable to resolve membership type term @tid: @message', ['@tid' => $tid, '@message' => $e->getMessage()]);
+          }
+        }
+        $counts[$tid]++;
+      }
+    }
+    catch (\Exception $e) {
+      $this->logger->error('Unable to calculate membership type counts: @message', ['@message' => $e->getMessage()]);
+    }
+
+    if ($configUpdated) {
+      ksort($terms);
+      $this->saveMembershipTypeTerms($terms);
+    }
+
+    $this->membershipTypeTerms = $terms;
+    return [
+      'counts' => $counts,
+      'terms' => $terms,
+    ];
+  }
+
+  /**
+   * Persists membership type term mapping to configuration.
+   */
+  protected function saveMembershipTypeTerms(array $terms): void {
+    ksort($terms);
+    $config = $this->configFactory->getEditable('makerspace_snapshot.membership_types');
+    $columns = [];
+    foreach ($terms as $tid => $info) {
+      $columns[] = [
+        'tid' => (int) $tid,
+        'label' => $info['label'] ?? ('Membership Type ' . $tid),
+      ];
+    }
+    $config->set('columns', $columns)->save();
+    $this->membershipTypeTerms = $terms;
   }
 
   public function importSnapshot($definition, $schedule, $snapshot_date, array $payload) {
@@ -649,18 +1118,27 @@ SQL,
       case 'tool_availability':
         $this->importToolAvailabilitySnapshot($snapshot_id, $payload);
         break;
+      case 'membership_types':
+        $this->importMembershipTypesSnapshot($snapshot_id, $payload);
+        break;
     }
 
     return $snapshot_id;
   }
 
   protected function importMembershipSnapshot($snapshot_id, array $payload) {
+    $members_active = (int) ($payload['totals']['members_active'] ?? 0);
+    $members_paused = (int) ($payload['totals']['members_paused'] ?? 0);
+    $members_lapsed = (int) ($payload['totals']['members_lapsed'] ?? 0);
+    $members_total = (int) ($payload['totals']['members_total'] ?? ($members_active + $members_paused));
+
     $this->database->merge('ms_fact_org_snapshot')
       ->key(['snapshot_id' => $snapshot_id])
       ->fields([
-        'members_active' => $payload['totals']['members_active'],
-        'members_paused' => $payload['totals']['members_paused'],
-        'members_lapsed' => $payload['totals']['members_lapsed'],
+        'members_total'  => $members_total,
+        'members_active' => $members_active,
+        'members_paused' => $members_paused,
+        'members_lapsed' => $members_lapsed,
         'joins'          => 0,
         'cancels'        => 0,
         'net_change'     => 0,
@@ -686,6 +1164,41 @@ SQL,
         'cancels'     => $payload['activity']['cancels'],
         'net_change'  => $payload['activity']['net_change'],
       ])->execute();
+  }
+
+  protected function importMembershipTypesSnapshot($snapshot_id, array $payload) {
+    $types = $payload['types']['counts'] ?? [];
+    $members_total = (int) ($payload['types']['members_total'] ?? array_sum($types));
+
+    $terms = $this->getMembershipTypeTerms();
+    $updatedTerms = $terms;
+    foreach ($types as $tid => $count) {
+      if (!isset($updatedTerms[$tid])) {
+        $updatedTerms[$tid] = ['label' => 'Membership Type ' . $tid];
+      }
+    }
+
+    if ($updatedTerms !== $terms) {
+      ksort($updatedTerms);
+      $this->saveMembershipTypeTerms($updatedTerms);
+      $terms = $updatedTerms;
+    }
+
+    $this->database->delete('ms_fact_membership_type_snapshot')
+      ->condition('snapshot_id', $snapshot_id)
+      ->execute();
+
+    foreach ($terms as $tid => $info) {
+      $count = isset($types[$tid]) ? (int) $types[$tid] : 0;
+      $this->database->insert('ms_fact_membership_type_snapshot')
+        ->fields([
+          'snapshot_id' => $snapshot_id,
+          'term_id' => $tid,
+          'term_label' => $info['label'] ?? ('Membership Type ' . $tid),
+          'members_total' => $members_total,
+          'member_count' => $count,
+        ])->execute();
+    }
   }
 
   protected function importDonationMetricsSnapshot($snapshot_id, array $payload) {
@@ -867,6 +1380,9 @@ SQL,
       ->execute();
 
     $this->database->delete('ms_fact_kpi_snapshot')
+      ->condition('snapshot_id', $snapshot_ids, 'IN')
+      ->execute();
+    $this->database->delete('ms_fact_membership_type_snapshot')
       ->condition('snapshot_id', $snapshot_ids, 'IN')
       ->execute();
 
@@ -1266,6 +1782,20 @@ SQL,
     return $row;
   }
 
+  protected function formatSnapshotDateLabel(string $value): string {
+    try {
+      return (new \DateTimeImmutable($value))->format('F Y');
+    }
+    catch (\Exception $e) {
+      return $value;
+    }
+  }
+
+  protected function formatTypeLabel(string $type): string {
+    $label = str_replace('_', ' ', $type);
+    return ucwords($label);
+  }
+
   /**
    * Deletes a snapshot and its associated data.
    *
@@ -1304,6 +1834,9 @@ SQL,
         ->condition('snapshot_id', $snapshot_id)
         ->execute();
       $this->database->delete('ms_fact_kpi_snapshot')
+        ->condition('snapshot_id', $snapshot_id)
+        ->execute();
+      $this->database->delete('ms_fact_membership_type_snapshot')
         ->condition('snapshot_id', $snapshot_id)
         ->execute();
 

@@ -69,6 +69,43 @@ class SnapshotImportForm extends SnapshotAdminBaseForm {
       '#description' => $this->t('<a href="@url">Download Template</a>', ['@url' => Url::fromRoute('makerspace_snapshot.download_template', ['definition' => 'plan_levels'])->toString()]),
     ];
 
+    $form['membership_types_csv'] = [
+      '#type' => 'managed_file',
+      '#title' => $this->t('Membership Types CSV'),
+      '#upload_validators' => ['file_validate_extensions' => ['csv']],
+      '#description' => $this->t('<a href="@url">Download Template</a>', ['@url' => Url::fromRoute('makerspace_snapshot.download_template', ['definition' => 'membership_types'])->toString()]),
+    ];
+
+    $export_options = $this->snapshotService->getSnapshotExportOptions();
+    if (!empty($export_options)) {
+      $export_options = ['' => $this->t('- Select snapshot -')] + $export_options;
+    }
+    else {
+      $export_options = ['' => $this->t('- No snapshots available -')];
+    }
+
+    $form['export'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Download Existing Snapshot'),
+      '#open' => FALSE,
+    ];
+
+    $form['export']['export_selection'] = [
+      '#type' => 'select',
+      '#title' => $this->t('Snapshot Period'),
+      '#options' => $export_options,
+      '#empty_value' => '',
+      '#description' => $this->t('Select the snapshot period to export across all datasets.'),
+    ];
+
+    $form['export']['export_submit'] = [
+      '#type' => 'submit',
+      '#value' => $this->t('Download Snapshot CSVs'),
+      '#submit' => ['::submitExportSnapshot'],
+      '#limit_validation_errors' => [['export_selection']],
+      '#disabled' => count($export_options) <= 1,
+    ];
+
     $form['actions'] = [
       '#type' => 'actions',
     ];
@@ -107,9 +144,21 @@ class SnapshotImportForm extends SnapshotAdminBaseForm {
     };
 
     if ($file_id = $form_state->getValue(['membership_totals_csv', 0])) {
-      $data = $this->extractCsvData($file_id, ['snapshot_date', 'members_active', 'members_paused', 'members_lapsed']);
+      $headersWithTotal = ['snapshot_date', 'members_active', 'members_paused', 'members_lapsed', 'members_total'];
+      try {
+        $data = $this->extractCsvData($file_id, $headersWithTotal);
+        $hasTotalColumn = TRUE;
+      }
+      catch (\Exception $e) {
+        $data = $this->extractCsvData($file_id, ['snapshot_date', 'members_active', 'members_paused', 'members_lapsed']);
+        $hasTotalColumn = FALSE;
+      }
+
       foreach ($data as $row) {
         $normalize_row($row);
+        $row['members_total'] = $hasTotalColumn && isset($row['members_total'])
+          ? (int) $row['members_total']
+          : ((int) ($row['members_active'] ?? 0) + (int) ($row['members_paused'] ?? 0));
         $import_data[$row['snapshot_date']]['membership_totals']['totals'] = $row;
         $all_dates[] = $row['snapshot_date'];
       }
@@ -143,6 +192,29 @@ class SnapshotImportForm extends SnapshotAdminBaseForm {
       }
       $import_data[$event_dates[0]]['event_registrations']['events'] = $data;
       $all_dates[] = $event_dates[0];
+    }
+
+    if ($file_id = $form_state->getValue(['membership_types_csv', 0])) {
+      $headers = $this->snapshotService->buildDefinitions()['membership_types']['headers'] ?? [];
+      if (empty($headers)) {
+        $headers = ['snapshot_date', 'members_total'];
+      }
+      $data = $this->extractCsvData($file_id, $headers);
+      foreach ($data as $row) {
+        $normalize_row($row);
+        $counts = [];
+        foreach ($row as $key => $value) {
+          if (strpos($key, 'membership_type_') === 0) {
+            $tid = (int) substr($key, strlen('membership_type_'));
+            $counts[$tid] = (int) $value;
+          }
+        }
+        $import_data[$row['snapshot_date']]['membership_types']['types'] = [
+          'members_total' => (int) ($row['members_total'] ?? array_sum($counts)),
+          'counts' => $counts,
+        ];
+        $all_dates[] = $row['snapshot_date'];
+      }
     }
 
     $all_dates = array_unique($all_dates);
@@ -186,6 +258,25 @@ class SnapshotImportForm extends SnapshotAdminBaseForm {
     }
     $this->messenger()->addMessage($this->t('The snapshot(s) have been imported.'));
     $this->cleanupUploadedFiles($form_state);
+  }
+
+  public function submitExportSnapshot(array &$form, FormStateInterface $form_state) {
+    $selection = (string) $form_state->getValue('export_selection');
+    if ($selection === '') {
+      $form_state->setErrorByName('export_selection', $this->t('Select a snapshot period to export.'));
+      return;
+    }
+
+    if (strpos($selection, '|') === FALSE) {
+      $form_state->setErrorByName('export_selection', $this->t('Invalid snapshot selection.'));
+      return;
+    }
+
+    [$snapshot_type, $snapshot_date] = explode('|', $selection, 2);
+    $form_state->setRedirect('makerspace_snapshot.export_snapshot_package', [
+      'snapshot_type' => $snapshot_type,
+      'snapshot_date' => $snapshot_date,
+    ]);
   }
 
   /**
@@ -240,6 +331,7 @@ class SnapshotImportForm extends SnapshotAdminBaseForm {
       'membership_activity_csv',
       'event_registrations_csv',
       'plan_csv',
+      'membership_types_csv',
     ];
 
     foreach ($file_inputs as $input) {

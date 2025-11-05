@@ -104,6 +104,30 @@ makerspace_snapshot.download.membership_activity:
     parameters:
       snapshot_id:
         type: integer
+makerspace_snapshot.download.membership_types:
+  path: '/admin/config/makerspace/snapshot/download-types/{snapshot_id}'
+  defaults:
+    _controller: '\Drupal\makerspace_snapshot\Controller\SnapshotDownloadController::downloadMembershipTypesData'
+    _title: 'Download Membership Types Data'
+  requirements:
+    _permission: 'administer site configuration'
+  options:
+    parameters:
+      snapshot_id:
+        type: integer
+makerspace_snapshot.export_snapshot_package:
+  path: '/admin/config/makerspace/snapshot/export/{snapshot_type}/{snapshot_date}'
+  defaults:
+    _controller: '\Drupal\makerspace_snapshot\Controller\SnapshotDownloadController::exportSnapshotPackage'
+    _title: 'Export Snapshot Package'
+  requirements:
+    _permission: 'administer site configuration'
+  options:
+    parameters:
+      snapshot_type:
+        type: string
+      snapshot_date:
+        type: string
 makerspace_snapshot.api.plan_level:
   path: '/makerspace-snapshot/api/plan-level/{snapshot_type}'
   defaults:

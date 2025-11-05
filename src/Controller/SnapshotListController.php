@@ -82,6 +82,7 @@ class SnapshotListController extends ControllerBase {
       'definition' => $this->t('Definition'),
       'snapshot_type' => $this->t('Type'),
       'snapshot_date' => $this->t('Date'),
+      'members_total' => $this->t('Members'),
       'source' => $this->t('Source'),
       'created_at' => $this->t('Created'),
       'operations' => $this->t('Operations'),
@@ -108,17 +109,56 @@ class SnapshotListController extends ControllerBase {
       $query->condition('definition', $filters['definition']);
     }
 
-    $snapshots = $query->execute();
+    $snapshots = $query->execute()->fetchAll();
+    if (empty($snapshots)) {
+      return [];
+    }
+
+    $snapshotIds = array_map(static function ($snapshot) {
+      return (int) $snapshot->id;
+    }, $snapshots);
+
+    $orgTotals = [];
+    $typeTotals = [];
+    if (!empty($snapshotIds)) {
+      $orgResult = $this->database->select('ms_fact_org_snapshot', 'o')
+        ->fields('o', ['snapshot_id', 'members_total'])
+        ->condition('snapshot_id', $snapshotIds, 'IN')
+        ->execute();
+      foreach ($orgResult as $row) {
+        $orgTotals[(int) $row->snapshot_id] = (int) $row->members_total;
+      }
+
+      $typeResult = $this->database->select('ms_fact_membership_type_snapshot', 'mt')
+        ->fields('mt', ['snapshot_id', 'members_total'])
+        ->condition('snapshot_id', $snapshotIds, 'IN')
+        ->execute();
+      foreach ($typeResult as $row) {
+        $sid = (int) $row->snapshot_id;
+        if (!isset($typeTotals[$sid])) {
+          $typeTotals[$sid] = (int) $row->members_total;
+        }
+      }
+    }
 
     foreach ($snapshots as $snapshot) {
       $definition_key = $snapshot->definition ?? 'membership_totals';
       $operations = $this->buildOperations($snapshot->id, $definition_key, $filters);
+
+      $membersTotalValue = '';
+      if ($definition_key === 'membership_totals' && isset($orgTotals[$snapshot->id])) {
+        $membersTotalValue = $orgTotals[$snapshot->id];
+      }
+      elseif ($definition_key === 'membership_types' && isset($typeTotals[$snapshot->id])) {
+        $membersTotalValue = $typeTotals[$snapshot->id];
+      }
 
       $rows[] = [
         'snapshot_id' => $snapshot->id,
         'definition' => $this->formatDefinitionLabel($definition_key),
         'snapshot_type' => $snapshot->snapshot_type,
         'snapshot_date' => $snapshot->snapshot_date,
+        'members_total' => $membersTotalValue,
         'source' => $this->formatSourceLabel($snapshot->source ?? ''),
         'created_at' => date('Y-m-d H:i:s', $snapshot->created_at),
         'operations' => [
@@ -171,6 +211,9 @@ class SnapshotListController extends ControllerBase {
 
       case 'membership_activity':
         return Url::fromRoute('makerspace_snapshot.download.membership_activity', ['snapshot_id' => $snapshot_id]);
+
+      case 'membership_types':
+        return Url::fromRoute('makerspace_snapshot.download.membership_types', ['snapshot_id' => $snapshot_id]);
 
       default:
         return NULL;

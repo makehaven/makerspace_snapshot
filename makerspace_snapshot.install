@@ -34,6 +34,7 @@ function makerspace_snapshot_schema() {
     'description' => 'Org-level snapshot metrics.',
     'fields' => [
       'snapshot_id' => ['type' => 'int', 'not null' => TRUE],
+      'members_total' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
       'members_active' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
       'members_paused' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
       'members_lapsed' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
@@ -56,6 +57,18 @@ function makerspace_snapshot_schema() {
     'indexes' => [
       'plan_code_idx' => ['plan_code'],
     ],
+  ];
+
+  $schema['ms_fact_membership_type_snapshot'] = [
+    'description' => 'Membership type breakdown per snapshot.',
+    'fields' => [
+      'snapshot_id' => ['type' => 'int', 'not null' => TRUE],
+      'term_id' => ['type' => 'int', 'not null' => TRUE],
+      'term_label' => ['type' => 'varchar', 'length' => 255, 'not null' => TRUE, 'default' => ''],
+      'members_total' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'member_count' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+    ],
+    'primary key' => ['snapshot_id', 'term_id'],
   ];
 
   $schema['ms_fact_membership_activity'] = [
@@ -229,15 +242,16 @@ function makerspace_snapshot_update_10001() {
         ])
         ->execute();
 
-      if ($snapshot_id) {
-          $connection->insert('ms_fact_org_snapshot')
-            ->fields([
-              'snapshot_id' => $snapshot_id,
-              'members_active' => $row->members_active,
-              'members_paused' => $row->members_paused,
-              'members_lapsed' => $row->members_lapsed,
-              'joins'          => $row->joins,
-              'cancels'        => $row->cancels,
+          if ($snapshot_id) {
+              $connection->insert('ms_fact_org_snapshot')
+                ->fields([
+                  'snapshot_id' => $snapshot_id,
+                  'members_total' => $row->members_active + $row->members_paused,
+                  'members_active' => $row->members_active,
+                  'members_paused' => $row->members_paused,
+                  'members_lapsed' => $row->members_lapsed,
+                  'joins'          => $row->joins,
+                  'cancels'        => $row->cancels,
               'net_change'     => $row->net_change,
             ])->execute();
 
@@ -338,6 +352,7 @@ function makerspace_snapshot_install() {
       $connection->insert('ms_fact_org_snapshot')
         ->fields([
           'snapshot_id' => $snapshot_id,
+          'members_total' => 722,
           'members_active' => 700,
           'members_paused' => 22,
           'members_lapsed' => 9,
@@ -535,5 +550,43 @@ function makerspace_snapshot_update_10012() {
     // Update the period index to include month/day if needed.
     // The existing period_idx index (if present) continues to cover period_year.
     // Extended indexing can be revisited once month/day filters are required.
+  }
+}
+
+/**
+ * Add members_total column to org snapshot fact table.
+ */
+function makerspace_snapshot_update_10013() {
+  $connection = \Drupal::database();
+  $schema = $connection->schema();
+
+  if (!$schema->fieldExists('ms_fact_org_snapshot', 'members_total')) {
+    $schema->addField('ms_fact_org_snapshot', 'members_total', [
+      'type' => 'int',
+      'not null' => TRUE,
+      'default' => 0,
+    ]);
+  }
+
+  $connection->update('ms_fact_org_snapshot')
+    ->expression('members_total', 'COALESCE(members_active, 0) + COALESCE(members_paused, 0)')
+    ->execute();
+}
+
+/**
+ * Adds membership type snapshot fact table.
+ */
+function makerspace_snapshot_update_10014() {
+  $connection = \Drupal::database();
+  $schema = $connection->schema();
+  $definition = makerspace_snapshot_schema()['ms_fact_membership_type_snapshot'];
+
+  if (!$schema->tableExists('ms_fact_membership_type_snapshot')) {
+    $schema->createTable('ms_fact_membership_type_snapshot', $definition);
+  }
+
+  $config = \Drupal::configFactory()->getEditable('makerspace_snapshot.membership_types');
+  if ($config->isNew()) {
+    $config->set('columns', [])->save();
   }
 }
