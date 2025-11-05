@@ -9,7 +9,7 @@ makerspace_snapshot.admin:
 makerspace_snapshot.snapshots:
   path: '/admin/config/makerspace/snapshot/list'
   defaults:
-    _form: '\Drupal\makerspace_snapshot\Form\SnapshotListForm'
+    _controller: '\Drupal\makerspace_snapshot\Controller\SnapshotListController::listing'
     _title: 'Existing Snapshots'
   requirements:
     _permission: 'administer site configuration'
@@ -29,6 +29,18 @@ makerspace_snapshot.manual:
     _title: 'Manual Snapshot'
   requirements:
     _permission: 'administer site configuration'
+
+makerspace_snapshot.snapshot_delete:
+  path: '/admin/config/makerspace/snapshot/{snapshot_id}/delete'
+  defaults:
+    _form: '\Drupal\makerspace_snapshot\Form\SnapshotDeleteForm'
+    _title: 'Delete Snapshot'
+  requirements:
+    _permission: 'administer site configuration'
+  options:
+    parameters:
+      snapshot_id:
+        type: integer
 
 makerspace_snapshot.api.org_level:
   path: '/makerspace-snapshot/api/org-level/{snapshot_type}'
