@@ -11,7 +11,7 @@ The Makerspace Snapshot module is designed to capture and store periodic snapsho
 - **Configuration:** The module's behavior is primarily driven by configuration entities, which are defined in YAML files in the `config/install` directory. These include settings, SQL query sources, and metric definitions.
 - **Database:** The module uses a set of custom tables to store snapshot data. The schema is defined in `makerspace_snapshot.install`.
 - **Drush Command:** A Drush command, `makerspace-snapshot:snapshot`, is provided for manually triggering snapshots. The command is defined in `src/Commands/MakerspaceSnapshotCommands.php`.
-- **Admin Form:** A configuration form at `/admin/config/makerspace/snapshot` allows administrators to configure the module and manually trigger snapshots. The form is defined in `src/Form/SnapshotAdminForm.php`.
+- **Admin Pages:** The admin area at `/admin/config/makerspace/snapshot` has dedicated local-task tabs for data sources (`src/Form/SnapshotDataSourcesForm.php`), existing snapshots (`src/Form/SnapshotListForm.php`), imports (`src/Form/SnapshotImportForm.php`), and manual snapshots (`src/Form/ManualSnapshotForm.php`).
 - **API:** The module exposes a set of API endpoints for retrieving snapshot data in a format suitable for dashboard consumption. The API is defined in `src/Controller/SnapshotApiController.php`.
 
 ### Development Patterns

@@ -1,8 +1,32 @@
 makerspace_snapshot.admin:
   path: '/admin/config/makerspace/snapshot'
   defaults:
-    _form: '\Drupal\makerspace_snapshot\Form\SnapshotAdminForm'
-    _title: 'Makerspace Snapshot'
+    _form: '\Drupal\makerspace_snapshot\Form\SnapshotDataSourcesForm'
+    _title: 'Snapshot Data Sources'
+  requirements:
+    _permission: 'administer site configuration'
+
+makerspace_snapshot.snapshots:
+  path: '/admin/config/makerspace/snapshot/list'
+  defaults:
+    _form: '\Drupal\makerspace_snapshot\Form\SnapshotListForm'
+    _title: 'Existing Snapshots'
+  requirements:
+    _permission: 'administer site configuration'
+
+makerspace_snapshot.import:
+  path: '/admin/config/makerspace/snapshot/import'
+  defaults:
+    _form: '\Drupal\makerspace_snapshot\Form\SnapshotImportForm'
+    _title: 'Import Snapshots'
+  requirements:
+    _permission: 'administer site configuration'
+
+makerspace_snapshot.manual:
+  path: '/admin/config/makerspace/snapshot/manual'
+  defaults:
+    _form: '\Drupal\makerspace_snapshot\Form\ManualSnapshotForm'
+    _title: 'Manual Snapshot'
   requirements:
     _permission: 'administer site configuration'
 
@@ -17,15 +41,6 @@ makerspace_snapshot.api.org_level:
     parameters:
       snapshot_type:
         type: string
-
-makerspace_snapshot.delete_snapshot_ajax:
-  path: '/admin/config/makerspace/snapshot/delete/{snapshot_id}'
-  defaults:
-    _controller: '\Drupal\makerspace_snapshot\Controller\SnapshotAdminController::deleteSnapshotAjax'
-    _title: 'Delete Snapshot'
-  requirements:
-    _permission: 'administer site configuration'
-  methods: [POST]
 
 makerspace_snapshot.safe_cache_clear:
   path: '/makerspace-snapshot/safe-cache-clear'

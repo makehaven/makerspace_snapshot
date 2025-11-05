@@ -22,6 +22,8 @@ class SnapshotDownloadController extends ControllerBase {
   }
 
   public function downloadOrgLevelData($snapshot_id) {
+    $filename = $this->buildFilename($snapshot_id, 'org_level_snapshot.csv', 'membership_totals');
+
     $response = new StreamedResponse(function() use ($snapshot_id) {
       $handle = fopen('php://output', 'r+');
 
@@ -43,12 +45,14 @@ class SnapshotDownloadController extends ControllerBase {
     });
 
     $response->headers->set('Content-Type', 'text/csv');
-    $response->headers->set('Content-Disposition', 'attachment; filename="org_level_snapshot.csv"');
+    $response->headers->set('Content-Disposition', sprintf('attachment; filename="%s"', $filename));
 
     return $response;
   }
 
   public function downloadPlanLevelData($snapshot_id) {
+    $filename = $this->buildFilename($snapshot_id, 'plan_level_snapshot.csv', 'plan_levels');
+
     $response = new StreamedResponse(function() use ($snapshot_id) {
         $handle = fopen('php://output', 'r+');
 
@@ -70,12 +74,14 @@ class SnapshotDownloadController extends ControllerBase {
     });
 
     $response->headers->set('Content-Type', 'text/csv');
-    $response->headers->set('Content-Disposition', 'attachment; filename="plan_level_snapshot.csv"');
+    $response->headers->set('Content-Disposition', sprintf('attachment; filename="%s"', $filename));
 
     return $response;
   }
 
   public function downloadMembershipActivityData($snapshot_id) {
+    $filename = $this->buildFilename($snapshot_id, 'membership_activity_snapshot.csv', 'membership_activity');
+
     $response = new StreamedResponse(function() use ($snapshot_id) {
       $handle = fopen('php://output', 'r+');
 
@@ -97,8 +103,63 @@ class SnapshotDownloadController extends ControllerBase {
     });
 
     $response->headers->set('Content-Type', 'text/csv');
-    $response->headers->set('Content-Disposition', 'attachment; filename="membership_activity_snapshot.csv"');
+    $response->headers->set('Content-Disposition', sprintf('attachment; filename="%s"', $filename));
 
     return $response;
   }
+
+  /**
+   * Builds a filename for the snapshot download.
+   */
+  protected function buildFilename($snapshot_id, string $fallback, ?string $expected_definition = NULL): string {
+    $snapshot = $this->database->select('ms_snapshot', 's')
+      ->fields('s', ['snapshot_type', 'snapshot_date', 'definition'])
+      ->condition('s.id', $snapshot_id)
+      ->execute()
+      ->fetchAssoc();
+
+    if (!$snapshot) {
+      return $fallback;
+    }
+
+    // If we expect a specific definition, prefer it, otherwise fall back to
+    // whatever the snapshot record stores.
+    $definition = $expected_definition ?: ($snapshot['definition'] ?? '');
+    if (!$definition) {
+      $definition = 'snapshot';
+    }
+
+    $snapshot_type = $snapshot['snapshot_type'] ?? '';
+    $snapshot_date = $snapshot['snapshot_date'] ?? '';
+
+    try {
+      if ($snapshot_date) {
+        $snapshot_date = (new \DateTimeImmutable($snapshot_date))->format('Y-m-d');
+      }
+    }
+    catch (\Exception $e) {
+      // Leave the date as-is if parsing fails.
+    }
+
+    $parts = array_filter([
+      $definition,
+      $snapshot_type,
+      $snapshot_date,
+    ]);
+
+    if (empty($parts)) {
+      return $fallback;
+    }
+
+    $base = strtolower(implode('-', $parts));
+    $base = preg_replace('/[^a-z0-9\-]+/', '-', $base ?? '');
+    $base = trim(preg_replace('/-+/', '-', $base), '-');
+
+    if ($base === '') {
+      $base = pathinfo($fallback, PATHINFO_FILENAME);
+    }
+
+    return $base . '.csv';
+  }
+
 }
