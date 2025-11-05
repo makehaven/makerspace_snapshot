@@ -544,13 +544,16 @@ class SnapshotAdminForm extends ConfigFormBase {
    * {@inheritdoc}
    */
   public function submitForm(array &$form, FormStateInterface $form_state) {
-    // All actions are handled by dedicated submit handlers.
+    $this->logger('makerspace_snapshot')->notice('submitForm() called.');
+    $trigger = $form_state->getTriggeringElement();
+    $this->logger('makerspace_snapshot')->notice('Triggering element: @name', ['@name' => $trigger['#name'] ?? 'N/A']);
   }
 
   /**
    * Handles manual snapshot submissions.
    */
   public function submitManualSnapshot(array &$form, FormStateInterface $form_state): void {
+    $this->logger('makerspace_snapshot')->notice('submitManualSnapshot() called.');
     $snapshotType = $form_state->getValue('snapshot_type');
     $isTest = $form_state->getValue('is_test');
     $definitions_input = $form_state->getValue('snapshot_definitions') ?? [];
@@ -593,6 +596,7 @@ class SnapshotAdminForm extends ConfigFormBase {
   }
 
   public function submitApplyFilters(array &$form, FormStateInterface $form_state): void {
+    $this->logger('makerspace_snapshot')->notice('submitApplyFilters() called.');
     $filters = $this->normalizeFilters($form_state->getValue('snapshot_filters') ?? []);
     $this->setActiveFilters($form_state, $filters);
     $this->setActiveTab($form_state, 'existing_snapshots');
@@ -600,12 +604,14 @@ class SnapshotAdminForm extends ConfigFormBase {
   }
 
   public function submitResetFilters(array &$form, FormStateInterface $form_state): void {
+    $this->logger('makerspace_snapshot')->notice('submitResetFilters() called.');
     $this->setActiveFilters($form_state, []);
     $this->setActiveTab($form_state, 'existing_snapshots');
     $form_state->setRedirect('makerspace_snapshot.admin', [], ['query' => ['tab' => 'existing_snapshots']]);
   }
 
   public function submitDeleteSnapshot(array &$form, FormStateInterface $form_state): void {
+    $this->logger('makerspace_snapshot')->notice('submitDeleteSnapshot() called.');
     $trigger = $form_state->getTriggeringElement();
     $snapshot_id = (int) ($trigger['#snapshot_id'] ?? 0);
     if (!$snapshot_id) {
@@ -638,6 +644,7 @@ class SnapshotAdminForm extends ConfigFormBase {
   }
 
   public function ajaxDeleteSnapshot(array &$form, FormStateInterface $form_state): AjaxResponse {
+    $this->logger('makerspace_snapshot')->notice('ajaxDeleteSnapshot() called.');
     $response = new AjaxResponse();
     $trigger = $form_state->getTriggeringElement();
     $snapshot_id = (int) ($trigger['#snapshot_id'] ?? 0);
