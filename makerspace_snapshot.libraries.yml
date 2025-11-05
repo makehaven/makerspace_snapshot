@@ -1,0 +1,8 @@
+snapshot-delete:
+  version: 1.x
+  js:
+    js/snapshot-delete.js: {}
+  dependencies:
+    - core/jquery
+    - core/drupal
+    - core/drupal.ajax

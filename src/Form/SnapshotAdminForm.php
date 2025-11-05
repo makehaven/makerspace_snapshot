@@ -403,20 +403,13 @@ class SnapshotAdminForm extends ConfigFormBase {
         }
 
         $operations['delete'] = [
-          '#type' => 'submit',
+          '#type' => 'button',
           '#value' => $this->t('Delete'),
           '#name' => 'delete_snapshot_' . $snapshot->id,
           '#limit_validation_errors' => [],
           '#attributes' => [
             'class' => ['snapshot-delete-button'],
             'data-snapshot-id' => $snapshot->id,
-          ],
-          '#snapshot_id' => $snapshot->id,
-          '#submit' => ['::submitDeleteSnapshot'],
-          '#ajax' => [
-            'callback' => '::ajaxDeleteSnapshot',
-            'event' => 'click',
-            'progress' => ['type' => 'throbber', 'message' => $this->t('Removing snapshot...')],
           ],
         ];
 
@@ -541,6 +534,8 @@ class SnapshotAdminForm extends ConfigFormBase {
 
       $form['query_information']['dataset_' . $dataset_key] = $dataset_section;
     }
+
+    $form['#attached']['library'][] = 'makerspace_snapshot/snapshot-delete';
 
     return parent::buildForm($form, $form_state);
   }
