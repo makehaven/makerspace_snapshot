@@ -54,6 +54,38 @@ makerspace_snapshot.api.org_level:
       snapshot_type:
         type: string
 
+makerspace_snapshot.download.historical_org_level:
+  path: '/admin/config/makerspace/snapshot/download-historical-org/{snapshot_definition}'
+  defaults:
+    _controller: '\Drupal\makerspace_snapshot\Controller\SnapshotHistoricalDownloadController::downloadOrgLevelData'
+    _title: 'Download Historical Org Level Data'
+  requirements:
+    _permission: 'administer site configuration'
+  options:
+    parameters:
+      snapshot_definition:
+        type: string
+
+makerspace_snapshot.download.historical_plan_level:
+  path: '/admin/config/makerspace/snapshot/download-historical-plan/{snapshot_definition}'
+  defaults:
+    _controller: '\Drupal\makerspace_snapshot\Controller\SnapshotHistoricalDownloadController::downloadPlanLevelData'
+    _title: 'Download Historical Plan Level Data'
+  requirements:
+    _permission: 'administer site configuration'
+  options:
+    parameters:
+      snapshot_definition:
+        type: string
+
+makerspace_snapshot.downloads:
+  path: '/admin/config/makerspace/snapshot/downloads'
+  defaults:
+    _form: '\Drupal\makerspace_snapshot\Form\SnapshotDownloadCenterForm'
+    _title: 'Download Snapshot Data'
+  requirements:
+    _permission: 'administer site configuration'
+
 makerspace_snapshot.safe_cache_clear:
   path: '/makerspace-snapshot/safe-cache-clear'
   defaults:

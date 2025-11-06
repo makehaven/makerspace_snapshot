@@ -10,6 +10,12 @@ makerspace_snapshot.snapshots_tab:
   base_route: makerspace_snapshot.admin
   weight: 5
 
+makerspace_snapshot.downloads_tab:
+  route_name: makerspace_snapshot.downloads
+  title: 'Download Snapshot Data'
+  base_route: makerspace_snapshot.admin
+  weight: 8
+
 makerspace_snapshot.import_tab:
   route_name: makerspace_snapshot.import
   title: 'Import Snapshots'

@@ -4,7 +4,10 @@ namespace Drupal\makerspace_snapshot\Form;
 
 use Drupal\Component\Utility\Html;
 use Drupal\Core\Database\Connection;
+use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Form\FormBase;
+use Drupal\Core\Link;
+use Drupal\Core\Url;
 use Drupal\makerspace_snapshot\SnapshotService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
@@ -28,11 +31,19 @@ abstract class SnapshotAdminBaseForm extends FormBase {
   protected SnapshotService $snapshotService;
 
   /**
+   * Module handler service.
+   *
+   * @var \Drupal\Core\Extension\ModuleHandlerInterface
+   */
+  protected ModuleHandlerInterface $moduleHandler;
+
+  /**
    * Constructs the base form.
    */
-  public function __construct(Connection $database, SnapshotService $snapshot_service) {
+  public function __construct(Connection $database, SnapshotService $snapshot_service, ModuleHandlerInterface $module_handler) {
     $this->database = $database;
     $this->snapshotService = $snapshot_service;
+    $this->moduleHandler = $module_handler;
   }
 
   /**
@@ -41,7 +52,8 @@ abstract class SnapshotAdminBaseForm extends FormBase {
   public static function create(ContainerInterface $container) {
     return new static(
       $container->get('database'),
-      $container->get('makerspace_snapshot.snapshot_service')
+      $container->get('makerspace_snapshot.snapshot_service'),
+      $container->get('module_handler')
     );
   }
 
@@ -219,6 +231,16 @@ abstract class SnapshotAdminBaseForm extends FormBase {
         ];
       }
 
+      $download_links = $this->buildHistoricalDownloadLinks($dataset_key);
+      if (!empty($download_links)) {
+        $dataset_section['historical_downloads'] = [
+          '#type' => 'item',
+          '#title' => $this->t('Historical downloads'),
+          '#markup' => implode(' | ', $download_links),
+          '#attributes' => ['class' => ['snapshot-dataset-downloads']],
+        ];
+      }
+
       $acquisition_mode = $definition_info['acquisition'] ?? 'automated';
 
       if ($acquisition_mode !== 'automated') {
@@ -266,6 +288,98 @@ abstract class SnapshotAdminBaseForm extends FormBase {
     }
 
     return $sections;
+  }
+
+  /**
+   * Returns known routes for historical snapshot exports.
+   *
+   * @return array
+   *   Associative array keyed by dataset definition.
+   */
+  protected function getHistoricalDownloadRouteMap(): array {
+    $map = [
+      'membership_totals' => 'makerspace_snapshot.download.historical_org_level',
+      'plan_levels' => 'makerspace_snapshot.download.historical_plan_level',
+    ];
+    $this->moduleHandler->alter('makerspace_snapshot_historical_routes', $map);
+    return $map;
+  }
+
+  /**
+   * Builds historical download links for a dataset definition.
+   *
+   * @param string $definition
+   *   Dataset definition machine name.
+   *
+   * @return string[]
+   *   Rendered link strings.
+   */
+  protected function buildHistoricalDownloadLinks(string $definition): array {
+    $route_map = $this->getHistoricalDownloadRouteMap();
+    if (!isset($route_map[$definition])) {
+      return [];
+    }
+
+    $route_name = $route_map[$definition];
+    $links = [];
+    $links[] = Link::fromTextAndUrl(
+      $this->t('All periods'),
+      Url::fromRoute($route_name, ['snapshot_definition' => $definition])
+    )->toString();
+
+    $available_types = $this->getAvailableSnapshotTypes([$definition]);
+    foreach ($available_types[$definition] ?? [] as $type) {
+      $links[] = Link::fromTextAndUrl(
+        $this->formatTypeLabel($type),
+        Url::fromRoute($route_name, ['snapshot_definition' => $definition], ['query' => ['type' => $type]])
+      )->toString();
+    }
+
+    return $links;
+  }
+
+  /**
+   * Determines available snapshot types per definition.
+   *
+   * @param string[] $definitions
+   *   Definition keys to inspect.
+   *
+   * @return array
+   *   Array keyed by definition with distinct snapshot types.
+   */
+  protected function getAvailableSnapshotTypes(array $definitions): array {
+    $types = [];
+    if (empty($definitions)) {
+      return $types;
+    }
+
+    $has_snapshot_table = $this->database->schema()->tableExists('ms_snapshot');
+    if (!$has_snapshot_table) {
+      return $types;
+    }
+
+    $query = $this->database->select('ms_snapshot', 's')
+      ->fields('s', ['definition', 'snapshot_type'])
+      ->condition('definition', $definitions, 'IN')
+      ->isNotNull('snapshot_type')
+      ->distinct()
+      ->orderBy('definition', 'ASC')
+      ->orderBy('snapshot_type', 'ASC');
+
+    foreach ($query->execute() as $record) {
+      $definition = (string) $record->definition;
+      $type = (string) $record->snapshot_type;
+      if ($definition === '' || $type === '') {
+        continue;
+      }
+      $types[$definition][] = $type;
+    }
+
+    foreach ($types as &$type_list) {
+      $type_list = array_values(array_unique($type_list));
+    }
+
+    return $types;
   }
 
 }

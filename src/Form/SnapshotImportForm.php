@@ -2,7 +2,9 @@
 
 namespace Drupal\makerspace_snapshot\Form;
 
+use Drupal\Component\Utility\Html;
 use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\Link;
 use Drupal\Core\Url;
 use Drupal\file\Entity\File;
 
@@ -23,7 +25,7 @@ class SnapshotImportForm extends SnapshotAdminBaseForm {
    */
   public function buildForm(array $form, FormStateInterface $form_state) {
     $form['description'] = [
-      '#markup' => '<p>' . $this->t('Import historical snapshot data from CSV files. You can import data for multiple dates in a single file. Dates will be normalized to the first of the month. Empty numeric values are acceptable and will be treated as 0.') . '</p>',
+      '#markup' => '<p>' . $this->t('Import historical snapshot data from CSV files. Multiple dates can be included per upload; each date will be normalized to the first of that month.') . '</p>',
     ];
 
     $snapshot_type_options = [
@@ -41,70 +43,44 @@ class SnapshotImportForm extends SnapshotAdminBaseForm {
       '#default_value' => 'monthly',
     ];
 
-    $form['membership_totals_csv'] = [
-      '#type' => 'managed_file',
-      '#title' => $this->t('Membership Totals CSV'),
-      '#upload_validators' => ['file_validate_extensions' => ['csv']],
-      '#description' => $this->t('<a href="@url">Download Template</a>', ['@url' => Url::fromRoute('makerspace_snapshot.download_template', ['definition' => 'membership_totals'])->toString()]),
+    $definitions = $this->snapshotService->buildDefinitions();
+    uasort($definitions, function (array $a, array $b) {
+      return strcasecmp($a['label'] ?? '', $b['label'] ?? '');
+    });
+
+    $dataset_map = $this->snapshotService->getDatasetSourceMap();
+
+    $form['datasets'] = [
+      '#type' => 'container',
+      '#attributes' => ['class' => ['snapshot-import-datasets']],
     ];
 
-    $form['membership_activity_csv'] = [
-      '#type' => 'managed_file',
-      '#title' => $this->t('Membership Activity CSV'),
-      '#upload_validators' => ['file_validate_extensions' => ['csv']],
-      '#description' => $this->t('<a href="@url">Download Template</a>', ['@url' => Url::fromRoute('makerspace_snapshot.download_template', ['definition' => 'membership_activity'])->toString()]),
-    ];
+    foreach ($definitions as $definition => $info) {
+      $field_name = $this->getDatasetFieldName($definition);
+      $label = $this->formatDefinitionLabel($definition);
+      $dataset_description = $dataset_map[$definition]['description'] ?? '';
+      $template_link = Link::fromTextAndUrl($this->t('Download template'), Url::fromRoute('makerspace_snapshot.download_template', ['definition' => $definition]))->toString();
+      $expected_headers = implode(', ', $info['headers'] ?? []);
 
-    $form['event_registrations_csv'] = [
-      '#type' => 'managed_file',
-      '#title' => $this->t('Event Registrations CSV'),
-      '#upload_validators' => ['file_validate_extensions' => ['csv']],
-      '#description' => $this->t('<a href="@url">Download Template</a>', ['@url' => Url::fromRoute('makerspace_snapshot.download_template', ['definition' => 'event_registrations'])->toString()]),
-    ];
+      $form['datasets'][$definition] = [
+        '#type' => 'details',
+        '#title' => $label,
+        '#open' => FALSE,
+      ];
 
-    $form['plan_csv'] = [
-      '#type' => 'managed_file',
-      '#title' => $this->t('Plan CSV'),
-      '#upload_validators' => ['file_validate_extensions' => ['csv']],
-      '#description' => $this->t('<a href="@url">Download Template</a>', ['@url' => Url::fromRoute('makerspace_snapshot.download_template', ['definition' => 'plan_levels'])->toString()]),
-    ];
+      if (!empty($dataset_description)) {
+        $form['datasets'][$definition]['summary'] = [
+          '#markup' => '<p>' . Html::escape($dataset_description) . '</p>',
+        ];
+      }
 
-    $form['membership_types_csv'] = [
-      '#type' => 'managed_file',
-      '#title' => $this->t('Membership Types CSV'),
-      '#upload_validators' => ['file_validate_extensions' => ['csv']],
-      '#description' => $this->t('<a href="@url">Download Template</a>', ['@url' => Url::fromRoute('makerspace_snapshot.download_template', ['definition' => 'membership_types'])->toString()]),
-    ];
-
-    $export_options = $this->snapshotService->getSnapshotExportOptions();
-    if (!empty($export_options)) {
-      $export_options = ['' => $this->t('- Select snapshot -')] + $export_options;
+      $form['datasets'][$definition][$field_name] = [
+        '#type' => 'managed_file',
+        '#title' => $this->t('@label CSV', ['@label' => $label]),
+        '#upload_validators' => ['file_validate_extensions' => ['csv']],
+        '#description' => $template_link . '<br/>' . $this->t('Expected headers: @headers', ['@headers' => $expected_headers]),
+      ];
     }
-    else {
-      $export_options = ['' => $this->t('- No snapshots available -')];
-    }
-
-    $form['export'] = [
-      '#type' => 'details',
-      '#title' => $this->t('Download Existing Snapshot'),
-      '#open' => FALSE,
-    ];
-
-    $form['export']['export_selection'] = [
-      '#type' => 'select',
-      '#title' => $this->t('Snapshot Period'),
-      '#options' => $export_options,
-      '#empty_value' => '',
-      '#description' => $this->t('Select the snapshot period to export across all datasets.'),
-    ];
-
-    $form['export']['export_submit'] = [
-      '#type' => 'submit',
-      '#value' => $this->t('Download Snapshot CSVs'),
-      '#submit' => ['::submitExportSnapshot'],
-      '#limit_validation_errors' => [['export_selection']],
-      '#disabled' => count($export_options) <= 1,
-    ];
 
     $form['actions'] = [
       '#type' => 'actions',
@@ -124,110 +100,45 @@ class SnapshotImportForm extends SnapshotAdminBaseForm {
     $import_data = [];
     $all_dates = [];
 
-    $normalize_row = function (&$row) use ($form_state) {
+    foreach ($this->getDatasetUploadFieldMap() as $definition => $field_name) {
+      $file_id = $form_state->getValue([$field_name, 0]);
+      if (!$file_id) {
+        continue;
+      }
+
       try {
-        $row['snapshot_date'] = (new \DateTimeImmutable($row['snapshot_date']))->format('Y-m-01');
+        $rows = $this->readDatasetCsv($definition, $file_id);
       }
       catch (\Exception $e) {
-        $form_state->setErrorByName('membership_totals_csv', $this->t('Invalid date format found in CSV: @date', ['@date' => $row['snapshot_date']]));
-        return;
+        $form_state->setErrorByName($field_name, $this->t('The @label CSV could not be processed: @message', [
+          '@label' => $this->formatDefinitionLabel($definition),
+          '@message' => $e->getMessage(),
+        ]));
+        continue;
       }
 
-      foreach ($row as $key => &$value) {
-        if (in_array($key, ['snapshot_date', 'plan_code', 'plan_label', 'event_title', 'event_start_date'], TRUE)) {
-          continue;
-        }
-        if ($value === '' || !is_numeric($value)) {
-          $value = 0;
-        }
-      }
-    };
-
-    if ($file_id = $form_state->getValue(['membership_totals_csv', 0])) {
-      $headersWithTotal = ['snapshot_date', 'members_active', 'members_paused', 'members_lapsed', 'members_total'];
-      try {
-        $data = $this->extractCsvData($file_id, $headersWithTotal);
-        $hasTotalColumn = TRUE;
-      }
-      catch (\Exception $e) {
-        $data = $this->extractCsvData($file_id, ['snapshot_date', 'members_active', 'members_paused', 'members_lapsed']);
-        $hasTotalColumn = FALSE;
-      }
-
-      foreach ($data as $row) {
-        $normalize_row($row);
-        $row['members_total'] = $hasTotalColumn && isset($row['members_total'])
-          ? (int) $row['members_total']
-          : ((int) ($row['members_active'] ?? 0) + (int) ($row['members_paused'] ?? 0));
-        $import_data[$row['snapshot_date']]['membership_totals']['totals'] = $row;
-        $all_dates[] = $row['snapshot_date'];
-      }
+      $this->processDatasetRows($definition, $field_name, $rows, $import_data, $all_dates, $form_state);
     }
 
-    if ($file_id = $form_state->getValue(['membership_activity_csv', 0])) {
-      $data = $this->extractCsvData($file_id, ['snapshot_date', 'joins', 'cancels', 'net_change']);
-      foreach ($data as $row) {
-        $normalize_row($row);
-        $import_data[$row['snapshot_date']]['membership_activity']['activity'] = $row;
-        $all_dates[] = $row['snapshot_date'];
-      }
-    }
-
-    if ($file_id = $form_state->getValue(['plan_csv', 0])) {
-      $data = $this->extractCsvData($file_id, ['snapshot_date', 'plan_code', 'plan_label', 'count_members']);
-      foreach ($data as $row) {
-        $normalize_row($row);
-        $import_data[$row['snapshot_date']]['membership_totals']['plans'][] = $row;
-      }
-    }
-
-    if ($file_id = $form_state->getValue(['event_registrations_csv', 0])) {
-      $data = $this->extractCsvData($file_id, ['snapshot_date', 'event_id', 'event_title', 'event_start_date', 'registration_count']);
-      foreach ($data as $row) {
-        $normalize_row($row);
-      }
-      $event_dates = array_unique(array_column($data, 'snapshot_date'));
-      if (count($event_dates) > 1) {
-        $form_state->setErrorByName('event_registrations_csv', $this->t('The event registrations CSV can only contain data for a single date.'));
-      }
-      $import_data[$event_dates[0]]['event_registrations']['events'] = $data;
-      $all_dates[] = $event_dates[0];
-    }
-
-    if ($file_id = $form_state->getValue(['membership_types_csv', 0])) {
-      $headers = $this->snapshotService->buildDefinitions()['membership_types']['headers'] ?? [];
-      if (empty($headers)) {
-        $headers = ['snapshot_date', 'members_total'];
-      }
-      $data = $this->extractCsvData($file_id, $headers);
-      foreach ($data as $row) {
-        $normalize_row($row);
-        $counts = [];
-        foreach ($row as $key => $value) {
-          if (strpos($key, 'membership_type_') === 0) {
-            $tid = (int) substr($key, strlen('membership_type_'));
-            $counts[$tid] = (int) $value;
-          }
-        }
-        $import_data[$row['snapshot_date']]['membership_types']['types'] = [
-          'members_total' => (int) ($row['members_total'] ?? array_sum($counts)),
-          'counts' => $counts,
-        ];
-        $all_dates[] = $row['snapshot_date'];
-      }
+    if ($form_state->getErrors()) {
+      return;
     }
 
     $all_dates = array_unique($all_dates);
     if (!empty($all_dates)) {
-      $query = $this->database->select('ms_snapshot', 's');
-      $query->fields('s', ['id', 'snapshot_date']);
-      $query->condition('snapshot_date', $all_dates, 'IN');
-      $results = $query->execute()->fetchAllAssoc('snapshot_date');
+      $query = $this->database->select('ms_snapshot', 's')
+        ->fields('s', ['id', 'definition', 'snapshot_date'])
+        ->condition('snapshot_date', $all_dates, 'IN');
+      $existing = $query->execute()->fetchAll();
+      $existing_map = [];
+      foreach ($existing as $row) {
+        $existing_map[$row->snapshot_date][$row->definition] = $row->id;
+      }
 
-      foreach ($import_data as $date => &$date_data) {
-        if (isset($results[$date])) {
-          foreach ($date_data as &$payload) {
-            $payload['snapshot_id'] = $results[$date]->id;
+      foreach ($import_data as $date => &$date_payloads) {
+        foreach ($date_payloads as $definition => &$payload) {
+          if (isset($existing_map[$date][$definition])) {
+            $payload['snapshot_id'] = $existing_map[$date][$definition];
           }
         }
       }
@@ -246,37 +157,278 @@ class SnapshotImportForm extends SnapshotAdminBaseForm {
       return;
     }
 
-    foreach ($import_data as $date => $date_data) {
-      foreach ($date_data as $definition => $data) {
+    foreach ($import_data as $date => $datasets) {
+      foreach ($datasets as $definition => $payload) {
         $this->snapshotService->importSnapshot(
           $definition,
           $form_state->getValue('import_schedule'),
           $date,
-          $data
+          $payload
         );
       }
     }
-    $this->messenger()->addMessage($this->t('The snapshot(s) have been imported.'));
+
+    $this->messenger()->addMessage($this->t('The snapshot data has been imported.'));
     $this->cleanupUploadedFiles($form_state);
   }
 
-  public function submitExportSnapshot(array &$form, FormStateInterface $form_state) {
-    $selection = (string) $form_state->getValue('export_selection');
-    if ($selection === '') {
-      $form_state->setErrorByName('export_selection', $this->t('Select a snapshot period to export.'));
-      return;
+  /**
+   * Builds a mapping of dataset definitions to upload field names.
+   */
+  protected function getDatasetUploadFieldMap(): array {
+    $map = [];
+    foreach ($this->snapshotService->buildDefinitions() as $definition => $info) {
+      $map[$definition] = $this->getDatasetFieldName($definition);
+    }
+    return $map;
+  }
+
+  /**
+   * Returns the field name for a dataset upload element.
+   */
+  protected function getDatasetFieldName(string $definition): string {
+    return $definition . '_csv';
+  }
+
+  /**
+   * Reads CSV rows for a given dataset.
+   *
+   * @throws \RuntimeException
+   */
+  protected function readDatasetCsv(string $definition, $file_id): array {
+    $definitions = $this->snapshotService->buildDefinitions();
+    $headers = $definitions[$definition]['headers'] ?? [];
+
+    if ($definition === 'membership_totals') {
+      try {
+        return $this->extractCsvData($file_id, $headers);
+      }
+      catch (\Exception $e) {
+        $fallback = ['snapshot_date', 'members_active', 'members_paused', 'members_lapsed'];
+        return $this->extractCsvData($file_id, $fallback);
+      }
     }
 
-    if (strpos($selection, '|') === FALSE) {
-      $form_state->setErrorByName('export_selection', $this->t('Invalid snapshot selection.'));
-      return;
+    if ($definition === 'membership_types' && empty($headers)) {
+      $headers = ['snapshot_date', 'members_total'];
     }
 
-    [$snapshot_type, $snapshot_date] = explode('|', $selection, 2);
-    $form_state->setRedirect('makerspace_snapshot.export_snapshot_package', [
-      'snapshot_type' => $snapshot_type,
-      'snapshot_date' => $snapshot_date,
-    ]);
+    if (empty($headers)) {
+      throw new \RuntimeException('Dataset headers are not defined.');
+    }
+
+    return $this->extractCsvData($file_id, $headers);
+  }
+
+  /**
+   * Processes CSV rows into snapshot payloads.
+   */
+  protected function processDatasetRows(string $definition, string $field_name, array $rows, array &$import_data, array &$all_dates, FormStateInterface $form_state): void {
+    switch ($definition) {
+      case 'membership_totals':
+        foreach ($rows as $row) {
+          $normalized_date = $this->normalizeSnapshotDate($row['snapshot_date'], $field_name, $form_state);
+          if ($normalized_date === NULL) {
+            continue;
+          }
+          $members_active = (int) ($row['members_active'] ?? 0);
+          $members_paused = (int) ($row['members_paused'] ?? 0);
+          $members_lapsed = (int) ($row['members_lapsed'] ?? 0);
+          $members_total = isset($row['members_total']) && $row['members_total'] !== ''
+            ? (int) $row['members_total']
+            : ($members_active + $members_paused);
+
+          $import_data[$normalized_date]['membership_totals']['totals'] = [
+            'members_active' => $members_active,
+            'members_paused' => $members_paused,
+            'members_lapsed' => $members_lapsed,
+            'members_total' => $members_total,
+          ];
+          $all_dates[] = $normalized_date;
+        }
+        break;
+
+      case 'plan_levels':
+        foreach ($rows as $row) {
+          $normalized_date = $this->normalizeSnapshotDate($row['snapshot_date'], $field_name, $form_state);
+          if ($normalized_date === NULL) {
+            continue;
+          }
+          $import_data[$normalized_date]['plan_levels']['plans'][] = [
+            'plan_code' => (string) ($row['plan_code'] ?? ''),
+            'plan_label' => (string) ($row['plan_label'] ?? ($row['plan_code'] ?? '')),
+            'count_members' => (int) ($row['count_members'] ?? 0),
+          ];
+          $all_dates[] = $normalized_date;
+        }
+        break;
+
+      case 'membership_activity':
+        foreach ($rows as $row) {
+          $normalized_date = $this->normalizeSnapshotDate($row['snapshot_date'], $field_name, $form_state);
+          if ($normalized_date === NULL) {
+            continue;
+          }
+          $import_data[$normalized_date]['membership_activity']['activity'] = [
+            'joins' => (int) ($row['joins'] ?? 0),
+            'cancels' => (int) ($row['cancels'] ?? 0),
+            'net_change' => (int) ($row['net_change'] ?? 0),
+          ];
+          $all_dates[] = $normalized_date;
+        }
+        break;
+
+      case 'event_registrations':
+        $date_tracker = [];
+        foreach ($rows as $row) {
+          $normalized_date = $this->normalizeSnapshotDate($row['snapshot_date'], $field_name, $form_state);
+          if ($normalized_date === NULL) {
+            continue;
+          }
+          $date_tracker[$normalized_date] = TRUE;
+          $import_data[$normalized_date]['event_registrations']['events'][] = [
+            'event_id' => (int) ($row['event_id'] ?? 0),
+            'event_title' => (string) ($row['event_title'] ?? ''),
+            'event_start_date' => (string) ($row['event_start_date'] ?? ''),
+            'registration_count' => (int) ($row['registration_count'] ?? 0),
+          ];
+          $all_dates[] = $normalized_date;
+        }
+        if (count($date_tracker) > 1) {
+          $form_state->setErrorByName($field_name, $this->t('The event registrations CSV can only contain data for a single date.'));
+        }
+        break;
+
+      case 'membership_types':
+        foreach ($rows as $row) {
+          $normalized_date = $this->normalizeSnapshotDate($row['snapshot_date'], $field_name, $form_state);
+          if ($normalized_date === NULL) {
+            continue;
+          }
+          $counts = [];
+          foreach ($row as $key => $value) {
+            if (strpos($key, 'membership_type_') === 0) {
+              $tid = (int) substr($key, strlen('membership_type_'));
+              $counts[$tid] = (int) $value;
+            }
+          }
+          $import_data[$normalized_date]['membership_types']['types'] = [
+            'members_total' => (int) ($row['members_total'] ?? array_sum($counts)),
+            'counts' => $counts,
+          ];
+          $all_dates[] = $normalized_date;
+        }
+        break;
+
+      case 'donation_metrics':
+        foreach ($rows as $row) {
+          $normalized_date = $this->normalizeSnapshotDate($row['snapshot_date'], $field_name, $form_state);
+          if ($normalized_date === NULL) {
+            continue;
+          }
+          $import_data[$normalized_date]['donation_metrics']['metrics'] = [
+            'period_year' => (int) ($row['period_year'] ?? 0),
+            'period_month' => (int) ($row['period_month'] ?? 0),
+            'donors_count' => (int) ($row['donors_count'] ?? 0),
+            'ytd_unique_donors' => (int) ($row['ytd_unique_donors'] ?? 0),
+            'contributions_count' => (int) ($row['contributions_count'] ?? 0),
+            'recurring_contributions_count' => (int) ($row['recurring_contributions_count'] ?? 0),
+            'onetime_contributions_count' => (int) ($row['onetime_contributions_count'] ?? 0),
+            'recurring_donors_count' => (int) ($row['recurring_donors_count'] ?? 0),
+            'onetime_donors_count' => (int) ($row['onetime_donors_count'] ?? 0),
+            'total_amount' => round((float) ($row['total_amount'] ?? 0), 2),
+            'recurring_amount' => round((float) ($row['recurring_amount'] ?? 0), 2),
+            'onetime_amount' => round((float) ($row['onetime_amount'] ?? 0), 2),
+          ];
+          $all_dates[] = $normalized_date;
+        }
+        break;
+
+      case 'event_type_metrics':
+        foreach ($rows as $row) {
+          $normalized_date = $this->normalizeSnapshotDate($row['snapshot_date'], $field_name, $form_state);
+          if ($normalized_date === NULL) {
+            continue;
+          }
+          $import_data[$normalized_date]['event_type_metrics']['event_types'][] = [
+            'period_year' => (int) ($row['period_year'] ?? 0),
+            'period_quarter' => (int) ($row['period_quarter'] ?? 0),
+            'period_month' => (int) ($row['period_month'] ?? 0),
+            'event_type_id' => ($row['event_type_id'] ?? '') === '' ? NULL : (int) $row['event_type_id'],
+            'event_type_label' => (string) ($row['event_type_label'] ?? 'Unknown'),
+            'participant_count' => (int) ($row['participant_count'] ?? 0),
+            'total_amount' => round((float) ($row['total_amount'] ?? 0), 2),
+            'average_ticket' => round((float) ($row['average_ticket'] ?? 0), 2),
+          ];
+          $all_dates[] = $normalized_date;
+        }
+        break;
+
+      case 'survey_metrics':
+        foreach ($rows as $row) {
+          $normalized_date = $this->normalizeSnapshotDate($row['snapshot_date'], $field_name, $form_state);
+          if ($normalized_date === NULL) {
+            continue;
+          }
+          $import_data[$normalized_date]['survey_metrics']['metrics'] = [
+            'period_year' => (int) ($row['period_year'] ?? 0),
+            'period_month' => (int) ($row['period_month'] ?? 0),
+            'period_day' => (int) ($row['period_day'] ?? 0),
+            'timeframe_label' => (string) ($row['timeframe_label'] ?? ''),
+            'respondents_count' => (int) ($row['respondents_count'] ?? 0),
+            'likely_recommend' => round((float) ($row['likely_recommend'] ?? 0), 2),
+            'net_promoter_score' => round((float) ($row['net_promoter_score'] ?? 0), 2),
+            'satisfaction_rating' => round((float) ($row['satisfaction_rating'] ?? 0), 2),
+            'equipment_score' => round((float) ($row['equipment_score'] ?? 0), 2),
+            'learning_resources_score' => round((float) ($row['learning_resources_score'] ?? 0), 2),
+            'member_events_score' => round((float) ($row['member_events_score'] ?? 0), 2),
+            'paid_workshops_score' => round((float) ($row['paid_workshops_score'] ?? 0), 2),
+            'facility_score' => round((float) ($row['facility_score'] ?? 0), 2),
+            'community_score' => round((float) ($row['community_score'] ?? 0), 2),
+            'vibe_score' => round((float) ($row['vibe_score'] ?? 0), 2),
+          ];
+          $all_dates[] = $normalized_date;
+        }
+        break;
+
+      case 'tool_availability':
+        foreach ($rows as $row) {
+          $normalized_date = $this->normalizeSnapshotDate($row['snapshot_date'], $field_name, $form_state);
+          if ($normalized_date === NULL) {
+            continue;
+          }
+          $import_data[$normalized_date]['tool_availability']['metrics'] = [
+            'period_year' => (int) ($row['period_year'] ?? 0),
+            'period_month' => (int) ($row['period_month'] ?? 0),
+            'period_day' => (int) ($row['period_day'] ?? 0),
+            'total_tools' => (int) ($row['total_tools'] ?? 0),
+            'available_tools' => (int) ($row['available_tools'] ?? 0),
+            'down_tools' => (int) ($row['down_tools'] ?? 0),
+            'maintenance_tools' => (int) ($row['maintenance_tools'] ?? 0),
+            'unknown_tools' => (int) ($row['unknown_tools'] ?? 0),
+            'availability_percent' => round((float) ($row['availability_percent'] ?? 0), 2),
+          ];
+          $all_dates[] = $normalized_date;
+        }
+        break;
+
+      default:
+        $form_state->setErrorByName($field_name, $this->t('Import handling for @definition is not configured.', ['@definition' => $definition]));
+        break;
+    }
+  }
+
+  /**
+   * Normalizes a snapshot date value to Y-m-01.
+   */
+  protected function normalizeSnapshotDate($value, string $field_name, FormStateInterface $form_state): ?string {
+    try {
+      return (new \DateTimeImmutable((string) $value))->format('Y-m-01');
+    }
+    catch (\Exception $e) {
+      $form_state->setErrorByName($field_name, $this->t('Invalid date found in the CSV: @date', ['@date' => $value]));
+      return NULL;
+    }
   }
 
   /**
@@ -326,18 +478,9 @@ class SnapshotImportForm extends SnapshotAdminBaseForm {
    * Deletes uploaded files after processing.
    */
   protected function cleanupUploadedFiles(FormStateInterface $form_state) {
-    $file_inputs = [
-      'membership_totals_csv',
-      'membership_activity_csv',
-      'event_registrations_csv',
-      'plan_csv',
-      'membership_types_csv',
-    ];
-
-    foreach ($file_inputs as $input) {
-      if ($file_id = $form_state->getValue([$input, 0])) {
-        $file = File::load($file_id);
-        if ($file) {
+    foreach ($this->getDatasetUploadFieldMap() as $field_name) {
+      if ($file_id = $form_state->getValue([$field_name, 0])) {
+        if ($file = File::load($file_id)) {
           $file->delete();
         }
       }

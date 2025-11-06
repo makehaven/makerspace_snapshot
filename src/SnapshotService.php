@@ -1103,6 +1103,9 @@ SQL,
       case 'membership_activity':
         $this->importMembershipActivitySnapshot($snapshot_id, $payload);
         break;
+      case 'plan_levels':
+        $this->importPlanLevelsSnapshot($snapshot_id, $payload);
+        break;
       case 'donation_metrics':
         $this->importDonationMetricsSnapshot($snapshot_id, $payload);
         break;
@@ -1145,14 +1148,41 @@ SQL,
       ])->execute();
 
     if (isset($payload['plans'])) {
-      foreach ($payload['plans'] as $plan) {
-        $this->database->merge('ms_fact_plan_snapshot')
-          ->key(['snapshot_id' => $snapshot_id, 'plan_code' => $plan['plan_code']])
-          ->fields([
-            'plan_label'     => $plan['plan_label'],
-            'count_members'  => $plan['count_members'],
-          ])->execute();
+      $this->importPlanLevelsSnapshot($snapshot_id, ['plans' => $payload['plans']]);
+    }
+  }
+
+  /**
+   * Imports plan level membership counts.
+   *
+   * @param int $snapshot_id
+   *   Snapshot identifier.
+   * @param array $payload
+   *   Array containing a 'plans' key with rows to persist.
+   */
+  protected function importPlanLevelsSnapshot($snapshot_id, array $payload) {
+    $plans = $payload['plans'] ?? [];
+    if (empty($plans) || !is_array($plans)) {
+      return;
+    }
+
+    $this->database->delete('ms_fact_plan_snapshot')
+      ->condition('snapshot_id', $snapshot_id)
+      ->execute();
+
+    foreach ($plans as $plan) {
+      $plan_code = (string) ($plan['plan_code'] ?? '');
+      if ($plan_code === '') {
+        continue;
       }
+      $this->database->insert('ms_fact_plan_snapshot')
+        ->fields([
+          'snapshot_id' => $snapshot_id,
+          'plan_code' => $plan_code,
+          'plan_label' => (string) ($plan['plan_label'] ?? $plan_code),
+          'count_members' => (int) ($plan['count_members'] ?? 0),
+        ])
+        ->execute();
     }
   }
 
