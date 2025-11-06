@@ -42,110 +42,100 @@ class SnapshotHistoricalDownloadController extends ControllerBase {
   }
 
   /**
-   * Streams historical membership total data as CSV.
+   * Backwards-compatible entry point for org-level downloads.
    */
   public function downloadOrgLevelData(string $snapshot_definition): StreamedResponse {
-    $definition = $this->normalizeDefinition($snapshot_definition, 'membership_totals');
-    if ($definition !== 'membership_totals') {
-      throw $this->createNotFoundException();
-    }
-    $snapshot_type = $this->getSnapshotTypeFilter();
-    $headers = $this->resolveHeaders($definition, [
-      'snapshot_date',
-      'members_active',
-      'members_paused',
-      'members_lapsed',
-      'members_total',
-    ]);
-
-    $response = new StreamedResponse(function () use ($definition, $snapshot_type, $headers) {
-      $handle = fopen('php://output', 'w');
-      fputcsv($handle, $headers);
-
-      $query = $this->database->select('ms_snapshot', 's');
-      $query->join('ms_fact_org_snapshot', 'o', 's.id = o.snapshot_id');
-      $query->fields('s', ['snapshot_date']);
-      $query->fields('o', ['members_active', 'members_paused', 'members_lapsed', 'members_total']);
-      $query->condition('s.definition', $definition);
-      if ($snapshot_type !== '') {
-        $query->condition('s.snapshot_type', $snapshot_type);
-      }
-      $query->orderBy('s.snapshot_date', 'ASC');
-
-      foreach ($query->execute()->fetchAll(\PDO::FETCH_ASSOC) as $row) {
-        $row = array_map(static function ($value) {
-          return is_numeric($value) ? (int) $value : $value;
-        }, $row);
-        $ordered = [];
-        foreach ($headers as $column) {
-          $ordered[] = $row[$column] ?? '';
-        }
-        fputcsv($handle, $ordered);
-      }
-
-      fclose($handle);
-    });
-
-    $response->headers->set('Content-Type', 'text/csv');
-    $response->headers->set('Content-Disposition', sprintf('attachment; filename="%s"', $this->buildFilename($definition, $snapshot_type)));
-
-    return $response;
+    return $this->downloadHistoricalData($snapshot_definition ?: 'membership_totals');
   }
 
   /**
-   * Streams historical per-plan member data as CSV.
+   * Backwards-compatible entry point for plan-level downloads.
    */
   public function downloadPlanLevelData(string $snapshot_definition): StreamedResponse {
-    $definition = $this->normalizeDefinition($snapshot_definition, 'plan_levels');
-    if ($definition !== 'plan_levels') {
+    return $this->downloadHistoricalData($snapshot_definition ?: 'plan_levels');
+  }
+
+  /**
+   * Streams historical data for any supported dataset definition.
+   */
+  public function downloadHistoricalData(string $snapshot_definition): StreamedResponse {
+    $definition = $this->canonicalDefinition($snapshot_definition);
+    $fallbacks = $this->getHeaderFallbacks();
+    if (!isset($fallbacks[$definition])) {
       throw $this->createNotFoundException();
     }
+
     $snapshot_type = $this->getSnapshotTypeFilter();
-    $headers = $this->resolveHeaders($definition, [
-      'snapshot_date',
-      'plan_code',
-      'plan_label',
-      'count_members',
-    ]);
+    $headers = $this->resolveHeaders($definition, $fallbacks[$definition]);
+    $filename = $this->buildFilename($definition, $snapshot_type);
 
     $response = new StreamedResponse(function () use ($definition, $snapshot_type, $headers) {
       $handle = fopen('php://output', 'w');
       fputcsv($handle, $headers);
-
-      $query = $this->database->select('ms_snapshot', 's');
-      $query->join('ms_fact_plan_snapshot', 'p', 's.id = p.snapshot_id');
-      $query->fields('s', ['snapshot_date']);
-      $query->fields('p', ['plan_code', 'plan_label', 'count_members']);
-      $query->condition('s.definition', $definition);
-      if ($snapshot_type !== '') {
-        $query->condition('s.snapshot_type', $snapshot_type);
-      }
-      $query->orderBy('s.snapshot_date', 'ASC');
-      $query->orderBy('p.plan_code', 'ASC');
-
-      foreach ($query->execute()->fetchAll(\PDO::FETCH_ASSOC) as $row) {
-        $row['plan_label'] = (string) $row['plan_label'];
-        $row['count_members'] = (int) $row['count_members'];
-        $ordered = [];
-        foreach ($headers as $column) {
-          $ordered[] = $row[$column] ?? '';
-        }
-        fputcsv($handle, $ordered);
-      }
-
+      $this->streamHistoricalRows($handle, $definition, $snapshot_type, $headers);
       fclose($handle);
     });
 
     $response->headers->set('Content-Type', 'text/csv');
-    $response->headers->set('Content-Disposition', sprintf('attachment; filename="%s"', $this->buildFilename($definition, $snapshot_type)));
+    $response->headers->set('Content-Disposition', sprintf('attachment; filename="%s"', $filename));
 
     return $response;
   }
 
   /**
-   * Normalizes snapshot definition aliases.
+   * Streams rows for the requested dataset definition.
    */
-  protected function normalizeDefinition(string $definition, string $expected): string {
+  protected function streamHistoricalRows($handle, string $definition, string $snapshot_type, array $headers): void {
+    $query = $this->database->select('ms_snapshot', 's')
+      ->fields('s', ['snapshot_type', 'snapshot_date'])
+      ->condition('definition', $definition);
+    if ($snapshot_type !== '') {
+      $query->condition('snapshot_type', $snapshot_type);
+    }
+    $query->orderBy('snapshot_date', 'ASC');
+    $query->orderBy('snapshot_type', 'ASC');
+
+    foreach ($query->execute()->fetchAll(\PDO::FETCH_ASSOC) as $record) {
+      $type = (string) ($record['snapshot_type'] ?? '');
+      $date = (string) ($record['snapshot_date'] ?? '');
+      if ($date === '') {
+        continue;
+      }
+      $export = $this->snapshotService->getSnapshotExportData($type, $date);
+      $dataset = $export[$definition] ?? NULL;
+      if (empty($dataset) || empty($dataset['rows'])) {
+        continue;
+      }
+      foreach ($dataset['rows'] as $row) {
+        fputcsv($handle, $this->normalizeDatasetRow($row, $headers));
+      }
+    }
+  }
+
+  /**
+   * Normalizes dataset rows to match the header length/order.
+   */
+  protected function normalizeDatasetRow(array $row, array $headers): array {
+    if (array_keys($row) === range(0, count($row) - 1)) {
+      $ordered = $row;
+    }
+    else {
+      $ordered = [];
+      foreach ($headers as $column) {
+        $ordered[] = $row[$column] ?? '';
+      }
+    }
+    $missing = count($headers) - count($ordered);
+    if ($missing > 0) {
+      $ordered = array_merge($ordered, array_fill(0, $missing, ''));
+    }
+    return $ordered;
+  }
+
+  /**
+   * Normalizes snapshot definition aliases to canonical machine names.
+   */
+  protected function canonicalDefinition(string $definition): string {
     $map = [
       'org' => 'membership_totals',
       'org_level' => 'membership_totals',
@@ -153,13 +143,7 @@ class SnapshotHistoricalDownloadController extends ControllerBase {
       'plan_level' => 'plan_levels',
     ];
     $key = strtolower($definition);
-    if (isset($map[$key])) {
-      return $map[$key] === $expected ? $map[$key] : $definition;
-    }
-    if ($key === $expected) {
-      return $expected;
-    }
-    return $definition;
+    return $map[$key] ?? $key;
   }
 
   /**
@@ -197,6 +181,96 @@ class SnapshotHistoricalDownloadController extends ControllerBase {
       array_unshift($headers, 'snapshot_date');
     }
     return $headers;
+  }
+
+  /**
+   * Provides fallback headers for known datasets.
+   */
+  protected function getHeaderFallbacks(): array {
+    return [
+      'membership_totals' => [
+        'snapshot_date',
+        'members_active',
+        'members_paused',
+        'members_lapsed',
+        'members_total',
+      ],
+      'membership_activity' => [
+        'snapshot_date',
+        'joins',
+        'cancels',
+        'net_change',
+      ],
+      'plan_levels' => [
+        'snapshot_date',
+        'plan_code',
+        'plan_label',
+        'count_members',
+      ],
+      'event_registrations' => [
+        'snapshot_date',
+        'event_id',
+        'event_title',
+        'event_start_date',
+        'registration_count',
+      ],
+      'membership_types' => [
+        'snapshot_date',
+        'members_total',
+      ],
+      'donation_metrics' => [
+        'snapshot_date',
+        'period_year',
+        'period_month',
+        'donors_count',
+        'ytd_unique_donors',
+        'contributions_count',
+        'recurring_contributions_count',
+        'onetime_contributions_count',
+        'recurring_donors_count',
+        'onetime_donors_count',
+        'total_amount',
+        'recurring_amount',
+        'onetime_amount',
+      ],
+      'event_type_metrics' => [
+        'snapshot_date',
+        'period_year',
+        'period_quarter',
+        'period_month',
+        'event_type_id',
+        'event_type_label',
+        'participant_count',
+        'total_amount',
+        'average_ticket',
+      ],
+      'survey_metrics' => [
+        'snapshot_date',
+        'respondents_count',
+        'likely_recommend',
+        'net_promoter_score',
+        'satisfaction_rating',
+        'equipment_score',
+        'learning_resources_score',
+        'member_events_score',
+        'paid_workshops_score',
+        'facility_score',
+        'community_score',
+        'vibe_score',
+      ],
+      'tool_availability' => [
+        'snapshot_date',
+        'period_year',
+        'period_month',
+        'period_day',
+        'total_tools',
+        'available_tools',
+        'down_tools',
+        'maintenance_tools',
+        'unknown_tools',
+        'availability_percent',
+      ],
+    ];
   }
 
 }

@@ -97,6 +97,21 @@ class SnapshotTemplateController extends ControllerBase {
           }
         }
         return $example;
+      case 'survey_metrics':
+        return [
+          '2025-01-01',
+          250,
+          85.5,
+          40.0,
+          92.3,
+          88.1,
+          86.4,
+          79.2,
+          83.5,
+          91.0,
+          87.6,
+          90.2,
+        ];
       default:
         return NULL;
     }

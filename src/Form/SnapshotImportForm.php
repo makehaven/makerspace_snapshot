@@ -371,10 +371,6 @@ class SnapshotImportForm extends SnapshotAdminBaseForm {
             continue;
           }
           $import_data[$normalized_date]['survey_metrics']['metrics'] = [
-            'period_year' => (int) ($row['period_year'] ?? 0),
-            'period_month' => (int) ($row['period_month'] ?? 0),
-            'period_day' => (int) ($row['period_day'] ?? 0),
-            'timeframe_label' => (string) ($row['timeframe_label'] ?? ''),
             'respondents_count' => (int) ($row['respondents_count'] ?? 0),
             'likely_recommend' => round((float) ($row['likely_recommend'] ?? 0), 2),
             'net_promoter_score' => round((float) ($row['net_promoter_score'] ?? 0), 2),
@@ -386,6 +382,7 @@ class SnapshotImportForm extends SnapshotAdminBaseForm {
             'facility_score' => round((float) ($row['facility_score'] ?? 0), 2),
             'community_score' => round((float) ($row['community_score'] ?? 0), 2),
             'vibe_score' => round((float) ($row['vibe_score'] ?? 0), 2),
+            'snapshot_date' => $normalized_date,
           ];
           $all_dates[] = $normalized_date;
         }

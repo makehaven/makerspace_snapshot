@@ -78,6 +78,18 @@ makerspace_snapshot.download.historical_plan_level:
       snapshot_definition:
         type: string
 
+makerspace_snapshot.download.historical:
+  path: '/admin/config/makerspace/snapshot/download-historical/{snapshot_definition}'
+  defaults:
+    _controller: '\Drupal\makerspace_snapshot\Controller\SnapshotHistoricalDownloadController::downloadHistoricalData'
+    _title: 'Download Historical Snapshot Data'
+  requirements:
+    _permission: 'administer site configuration'
+  options:
+    parameters:
+      snapshot_definition:
+        type: string
+
 makerspace_snapshot.downloads:
   path: '/admin/config/makerspace/snapshot/downloads'
   defaults:
@@ -141,6 +153,66 @@ makerspace_snapshot.download.membership_types:
   defaults:
     _controller: '\Drupal\makerspace_snapshot\Controller\SnapshotDownloadController::downloadMembershipTypesData'
     _title: 'Download Membership Types Data'
+  requirements:
+    _permission: 'administer site configuration'
+  options:
+    parameters:
+      snapshot_id:
+        type: integer
+
+makerspace_snapshot.download.event_registrations:
+  path: '/admin/config/makerspace/snapshot/download-events/{snapshot_id}'
+  defaults:
+    _controller: '\Drupal\makerspace_snapshot\Controller\SnapshotDownloadController::downloadEventRegistrationsData'
+    _title: 'Download Event Registrations Data'
+  requirements:
+    _permission: 'administer site configuration'
+  options:
+    parameters:
+      snapshot_id:
+        type: integer
+
+makerspace_snapshot.download.donation_metrics:
+  path: '/admin/config/makerspace/snapshot/download-donations/{snapshot_id}'
+  defaults:
+    _controller: '\Drupal\makerspace_snapshot\Controller\SnapshotDownloadController::downloadDonationMetricsData'
+    _title: 'Download Donation Metrics Data'
+  requirements:
+    _permission: 'administer site configuration'
+  options:
+    parameters:
+      snapshot_id:
+        type: integer
+
+makerspace_snapshot.download.event_type_metrics:
+  path: '/admin/config/makerspace/snapshot/download-event-types/{snapshot_id}'
+  defaults:
+    _controller: '\Drupal\makerspace_snapshot\Controller\SnapshotDownloadController::downloadEventTypeMetricsData'
+    _title: 'Download Event Type Metrics Data'
+  requirements:
+    _permission: 'administer site configuration'
+  options:
+    parameters:
+      snapshot_id:
+        type: integer
+
+makerspace_snapshot.download.survey_metrics:
+  path: '/admin/config/makerspace/snapshot/download-survey/{snapshot_id}'
+  defaults:
+    _controller: '\Drupal\makerspace_snapshot\Controller\SnapshotDownloadController::downloadSurveyMetricsData'
+    _title: 'Download Survey Metrics Data'
+  requirements:
+    _permission: 'administer site configuration'
+  options:
+    parameters:
+      snapshot_id:
+        type: integer
+
+makerspace_snapshot.download.tool_availability:
+  path: '/admin/config/makerspace/snapshot/download-tool-availability/{snapshot_id}'
+  defaults:
+    _controller: '\Drupal\makerspace_snapshot\Controller\SnapshotDownloadController::downloadToolAvailabilityData'
+    _title: 'Download Tool Availability Data'
   requirements:
     _permission: 'administer site configuration'
   options:

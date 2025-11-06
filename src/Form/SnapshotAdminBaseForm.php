@@ -297,10 +297,26 @@ abstract class SnapshotAdminBaseForm extends FormBase {
    *   Associative array keyed by dataset definition.
    */
   protected function getHistoricalDownloadRouteMap(): array {
-    $map = [
-      'membership_totals' => 'makerspace_snapshot.download.historical_org_level',
-      'plan_levels' => 'makerspace_snapshot.download.historical_plan_level',
+    $supported = [
+      'membership_totals',
+      'membership_activity',
+      'plan_levels',
+      'event_registrations',
+      'membership_types',
+      'donation_metrics',
+      'event_type_metrics',
+      'survey_metrics',
+      'tool_availability',
     ];
+
+    $definitions = $this->snapshotService->buildDefinitions();
+    $map = [];
+    foreach ($supported as $definition) {
+      if (isset($definitions[$definition])) {
+        $map[$definition] = 'makerspace_snapshot.download.historical';
+      }
+    }
+
     $this->moduleHandler->alter('makerspace_snapshot_historical_routes', $map);
     return $map;
   }

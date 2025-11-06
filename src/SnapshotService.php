@@ -278,10 +278,6 @@ SQL,
       'schedules' => ['annually'],
       'headers' => [
         'snapshot_date',
-        'period_year',
-        'period_month',
-        'period_day',
-        'timeframe_label',
         'respondents_count',
         'likely_recommend',
         'net_promoter_score',
@@ -882,6 +878,168 @@ SQL,
       ];
     }
 
+    if (isset($definitions['donation_metrics'])) {
+      $header = $definitions['donation_metrics']['headers'];
+      $values = array_fill_keys($header, 0);
+      $values['snapshot_date'] = $normalizedDate;
+      $donationId = $snapshotRows['donation_metrics']->id ?? NULL;
+      if ($donationId) {
+        $record = $this->database->select('ms_fact_donation_snapshot', 'd')
+          ->fields('d')
+          ->condition('snapshot_id', $donationId)
+          ->execute()
+          ->fetchAssoc() ?: [];
+        foreach ($header as $column) {
+          if ($column === 'snapshot_date' || !isset($record[$column])) {
+            continue;
+          }
+          if (in_array($column, ['total_amount', 'recurring_amount', 'onetime_amount'], TRUE)) {
+            $values[$column] = round((float) $record[$column], 2);
+          }
+          else {
+            $values[$column] = (int) $record[$column];
+          }
+        }
+      }
+      $data['donation_metrics'] = [
+        'filename' => 'donation_metrics.csv',
+        'header' => $header,
+        'rows' => [array_values($values)],
+      ];
+    }
+
+    if (isset($definitions['event_type_metrics'])) {
+      $header = $definitions['event_type_metrics']['headers'];
+      $rows = [];
+      $eventTypeId = $snapshotRows['event_type_metrics']->id ?? NULL;
+      if ($eventTypeId) {
+        $result = $this->database->select('ms_fact_event_type_snapshot', 'e')
+          ->fields('e', [
+            'period_year',
+            'period_quarter',
+            'period_month',
+            'event_type_id',
+            'event_type_label',
+            'participant_count',
+            'total_amount',
+            'average_ticket',
+          ])
+          ->condition('snapshot_id', $eventTypeId)
+          ->orderBy('event_type_label')
+          ->execute();
+        foreach ($result as $record) {
+          $row = [];
+          foreach ($header as $column) {
+            switch ($column) {
+              case 'snapshot_date':
+                $row[] = $normalizedDate;
+                break;
+
+              case 'event_type_label':
+                $row[] = (string) ($record->event_type_label ?? '');
+                break;
+
+              case 'event_type_id':
+                $row[] = $record->event_type_id === NULL ? '' : (int) $record->event_type_id;
+                break;
+
+              case 'total_amount':
+              case 'average_ticket':
+                $row[] = round((float) ($record->$column ?? 0), 2);
+                break;
+
+              default:
+                $row[] = (int) ($record->$column ?? 0);
+                break;
+            }
+          }
+          $rows[] = $row;
+        }
+      }
+      $data['event_type_metrics'] = [
+        'filename' => 'event_type_metrics.csv',
+        'header' => $header,
+        'rows' => $rows,
+      ];
+    }
+
+    if (isset($definitions['survey_metrics'])) {
+      $header = $definitions['survey_metrics']['headers'];
+      $values = array_fill_keys($header, 0);
+      $values['snapshot_date'] = $normalizedDate;
+      if (in_array('timeframe_label', $header, TRUE)) {
+        $values['timeframe_label'] = '';
+      }
+      $surveyId = $snapshotRows['survey_metrics']->id ?? NULL;
+      if ($surveyId) {
+        $record = $this->database->select('ms_fact_survey_snapshot', 's')
+          ->fields('s')
+          ->condition('snapshot_id', $surveyId)
+          ->execute()
+          ->fetchAssoc() ?: [];
+        foreach ($header as $column) {
+          if ($column === 'snapshot_date' || !isset($record[$column])) {
+            continue;
+          }
+          if ($column === 'timeframe_label') {
+            $values[$column] = (string) $record[$column];
+          }
+          elseif (in_array($column, [
+            'likely_recommend',
+            'net_promoter_score',
+            'satisfaction_rating',
+            'equipment_score',
+            'learning_resources_score',
+            'member_events_score',
+            'paid_workshops_score',
+            'facility_score',
+            'community_score',
+            'vibe_score',
+          ], TRUE)) {
+            $values[$column] = round((float) $record[$column], 2);
+          }
+          else {
+            $values[$column] = (int) $record[$column];
+          }
+        }
+      }
+      $data['survey_metrics'] = [
+        'filename' => 'survey_metrics.csv',
+        'header' => $header,
+        'rows' => [array_values($values)],
+      ];
+    }
+
+    if (isset($definitions['tool_availability'])) {
+      $header = $definitions['tool_availability']['headers'];
+      $values = array_fill_keys($header, 0);
+      $values['snapshot_date'] = $normalizedDate;
+      $toolId = $snapshotRows['tool_availability']->id ?? NULL;
+      if ($toolId) {
+        $record = $this->database->select('ms_fact_tool_uptime_snapshot', 't')
+          ->fields('t')
+          ->condition('snapshot_id', $toolId)
+          ->execute()
+          ->fetchAssoc() ?: [];
+        foreach ($header as $column) {
+          if ($column === 'snapshot_date' || !isset($record[$column])) {
+            continue;
+          }
+          if ($column === 'availability_percent') {
+            $values[$column] = round((float) $record[$column], 2);
+          }
+          else {
+            $values[$column] = (int) $record[$column];
+          }
+        }
+      }
+      $data['tool_availability'] = [
+        'filename' => 'tool_availability.csv',
+        'header' => $header,
+        'rows' => [array_values($values)],
+      ];
+    }
+
     return $data;
   }
 
@@ -1303,11 +1461,27 @@ SQL,
       return;
     }
 
+    $snapshotDate = $metrics['snapshot_date'] ?? NULL;
+    $derivedYear = (int) date('Y');
+    $derivedMonth = 0;
+    $derivedDay = 0;
+    if ($snapshotDate) {
+      try {
+        $date = new \DateTimeImmutable($snapshotDate);
+        $derivedYear = (int) $date->format('Y');
+        $derivedMonth = (int) $date->format('n');
+        $derivedDay = (int) $date->format('j');
+      }
+      catch (\Exception $e) {
+        // Ignore parsing errors; fallback values will be used.
+      }
+    }
+
     $fields = [
       'snapshot_id' => $snapshot_id,
-      'period_year' => (int) ($metrics['period_year'] ?? date('Y')),
-      'period_month' => (int) ($metrics['period_month'] ?? 0),
-      'period_day' => (int) ($metrics['period_day'] ?? 0),
+      'period_year' => (int) ($metrics['period_year'] ?? $derivedYear),
+      'period_month' => (int) ($metrics['period_month'] ?? $derivedMonth),
+      'period_day' => (int) ($metrics['period_day'] ?? $derivedDay),
       'timeframe_label' => (string) ($metrics['timeframe_label'] ?? ''),
       'respondents_count' => (int) ($metrics['respondents_count'] ?? 0),
       'likely_recommend' => round((float) ($metrics['likely_recommend'] ?? 0), 2),

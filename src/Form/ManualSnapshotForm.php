@@ -32,7 +32,6 @@ class ManualSnapshotForm extends SnapshotAdminBaseForm {
     ];
 
     $manual_definition_options = $this->getManualSnapshotDefinitionOptions();
-    $default_definition_selection = array_keys($manual_definition_options);
 
     $form['snapshot_type'] = [
       '#type' => 'select',
@@ -45,8 +44,8 @@ class ManualSnapshotForm extends SnapshotAdminBaseForm {
       '#type' => 'checkboxes',
       '#title' => $this->t('Definitions'),
       '#options' => $manual_definition_options,
-      '#default_value' => $default_definition_selection,
-      '#description' => $this->t('Select the data sets to refresh. Leave all checked to snapshot every available definition.'),
+      '#default_value' => [],
+      '#description' => $this->t('Select the datasets to refresh. Leave all unchecked if you only intend to snapshot specific definitions.'),
     ];
 
     $form['actions'] = [

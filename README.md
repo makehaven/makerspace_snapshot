@@ -52,3 +52,25 @@ Contributions and improvements to this module are welcome. Please refer to the `
 ### Adding KPI Metrics
 
 Implement `hook_makerspace_snapshot_collect_kpi()` in your module to push additional KPI values into the snapshot pipeline. The hook receives the snapshot context (dates, membership counts, etc.) and should return an array keyed by KPI machine name. Each entry can be a scalar value or an array with optional `period_year`, `period_month`, and `meta` overrides. Captured metrics are stored in `ms_fact_kpi_snapshot` and are immediately consumable by the makerspace dashboard services.
+
+### Adding New Snapshot Datasets
+
+The module follows a consistent pattern for listing, importing, and exporting dataset definitions. When you introduce a new metric, touch the following pieces so every UI stays in sync:
+
+1. **Define metadata and headers**  
+   - Extend `$datasetDefinitions` and, when needed, `$datasetSourceMap` inside `src/SnapshotService.php`.  
+   - Include a human-readable label, default schedules, CSV headers, acquisition mode, and data source description.
+
+2. **Expose historical downloads (optional)**  
+   - Add the dataset’s route name to `SnapshotAdminBaseForm::getHistoricalDownloadRouteMap()` if it should provide org/plan-style CSV history.  
+   - Implement a controller method or alter hook to stream the historical CSV if the generic routes do not already cover it.
+
+3. **Wire import handling**  
+   - Update `SnapshotImportForm::processDatasetRows()` with parsing/validation logic for the new definition.  
+   - Store the data through a dedicated helper in `SnapshotService` (similar to `importPlanLevelsSnapshot()`) so API/exports share the same schema.
+
+4. **Templates and exports**  
+   - Ensure `SnapshotTemplateController` returns a CSV template that matches the new headers.  
+   - If the dataset participates in the snapshot export ZIP, extend `SnapshotService::getSnapshotExportData()` accordingly.
+
+Every dataset keyed in `buildDefinitions()` automatically gains admin listings, import upload widgets, historical download links on the data sources tab, and entries on the Download Snapshot Data page. Keeping machine names in `snake_case`, headers aligned with `buildDefinitions()`, and CSV files in UTF-8 ensures imports remain stable across environments.

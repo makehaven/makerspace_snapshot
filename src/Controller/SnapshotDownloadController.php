@@ -26,135 +26,39 @@ class SnapshotDownloadController extends ControllerBase {
   }
 
   public function downloadOrgLevelData($snapshot_id) {
-    $filename = $this->buildFilename($snapshot_id, 'org_level_snapshot.csv', 'membership_totals');
-
-    $response = new StreamedResponse(function() use ($snapshot_id) {
-      $handle = fopen('php://output', 'r+');
-
-      $header = ['snapshot_date', 'members_total', 'members_active', 'members_paused', 'members_lapsed', 'joins', 'cancels', 'net_change'];
-      fputcsv($handle, $header);
-
-      $query = $this->database->select('ms_snapshot', 's');
-      $query->join('ms_fact_org_snapshot', 'o', 's.id = o.snapshot_id');
-      $query->fields('s', ['snapshot_date']);
-      $query->fields('o', ['members_total', 'members_active', 'members_paused', 'members_lapsed', 'joins', 'cancels', 'net_change']);
-      $query->condition('s.id', $snapshot_id);
-      $results = $query->execute()->fetchAll(\PDO::FETCH_ASSOC);
-
-      foreach ($results as $row) {
-        fputcsv($handle, $row);
-      }
-
-      fclose($handle);
-    });
-
-    $response->headers->set('Content-Type', 'text/csv');
-    $response->headers->set('Content-Disposition', sprintf('attachment; filename="%s"', $filename));
-
-    return $response;
+    return $this->streamSnapshotDefinition((int) $snapshot_id, 'membership_totals', 'membership_totals.csv');
   }
 
   public function downloadPlanLevelData($snapshot_id) {
-    $filename = $this->buildFilename($snapshot_id, 'plan_level_snapshot.csv', 'plan_levels');
-
-    $response = new StreamedResponse(function() use ($snapshot_id) {
-        $handle = fopen('php://output', 'r+');
-
-        $header = ['snapshot_date', 'plan_code', 'plan_label', 'count_members'];
-        fputcsv($handle, $header);
-
-        $query = $this->database->select('ms_snapshot', 's');
-        $query->join('ms_fact_plan_snapshot', 'p', 's.id = p.snapshot_id');
-        $query->fields('s', ['snapshot_date']);
-        $query->fields('p', ['plan_code', 'plan_label', 'count_members']);
-        $query->condition('s.id', $snapshot_id);
-        $results = $query->execute()->fetchAll(\PDO::FETCH_ASSOC);
-
-        foreach ($results as $row) {
-            fputcsv($handle, $row);
-        }
-
-        fclose($handle);
-    });
-
-    $response->headers->set('Content-Type', 'text/csv');
-    $response->headers->set('Content-Disposition', sprintf('attachment; filename="%s"', $filename));
-
-    return $response;
+    return $this->streamSnapshotDefinition((int) $snapshot_id, 'plan_levels', 'plan_levels.csv');
   }
 
   public function downloadMembershipActivityData($snapshot_id) {
-    $filename = $this->buildFilename($snapshot_id, 'membership_activity_snapshot.csv', 'membership_activity');
-
-    $response = new StreamedResponse(function() use ($snapshot_id) {
-      $handle = fopen('php://output', 'r+');
-
-      $header = ['snapshot_date', 'joins', 'cancels', 'net_change'];
-      fputcsv($handle, $header);
-
-      $query = $this->database->select('ms_snapshot', 's');
-      $query->join('ms_fact_membership_activity', 'a', 's.id = a.snapshot_id');
-      $query->fields('s', ['snapshot_date']);
-      $query->fields('a', ['joins', 'cancels', 'net_change']);
-      $query->condition('s.id', $snapshot_id);
-      $results = $query->execute()->fetchAll(\PDO::FETCH_ASSOC);
-
-      foreach ($results as $row) {
-        fputcsv($handle, $row);
-      }
-
-      fclose($handle);
-    });
-
-    $response->headers->set('Content-Type', 'text/csv');
-    $response->headers->set('Content-Disposition', sprintf('attachment; filename="%s"', $filename));
-
-    return $response;
+    return $this->streamSnapshotDefinition((int) $snapshot_id, 'membership_activity', 'membership_activity.csv');
   }
 
   public function downloadMembershipTypesData($snapshot_id) {
-    $snapshot = $this->database->select('ms_snapshot', 's')
-      ->fields('s', ['snapshot_type', 'snapshot_date'])
-      ->condition('id', $snapshot_id)
-      ->execute()
-      ->fetchAssoc();
+    return $this->streamSnapshotDefinition((int) $snapshot_id, 'membership_types', 'membership_types.csv');
+  }
 
-    if (!$snapshot) {
-      throw $this->createNotFoundException();
-    }
+  public function downloadEventRegistrationsData($snapshot_id) {
+    return $this->streamSnapshotDefinition((int) $snapshot_id, 'event_registrations', 'event_registrations.csv');
+  }
 
-    $exportData = $this->snapshotService->getSnapshotExportData($snapshot['snapshot_type'] ?? '', $snapshot['snapshot_date'] ?? '');
-    if (empty($exportData['membership_types'])) {
-      throw $this->createNotFoundException();
-    }
+  public function downloadDonationMetricsData($snapshot_id) {
+    return $this->streamSnapshotDefinition((int) $snapshot_id, 'donation_metrics', 'donation_metrics.csv');
+  }
 
-    $dataset = $exportData['membership_types'];
-    $header = $dataset['header'];
-    $labels = $dataset['labels'] ?? [];
-    foreach ($header as $index => $column) {
-      if (strpos($column, 'membership_type_') === 0) {
-        $tid = (int) substr($column, strlen('membership_type_'));
-        $label = $labels[$tid] ?? ('Membership Type ' . $tid);
-        $header[$index] = sprintf('%s (%s, TID %d)', $column, $label, $tid);
-      }
-    }
+  public function downloadEventTypeMetricsData($snapshot_id) {
+    return $this->streamSnapshotDefinition((int) $snapshot_id, 'event_type_metrics', 'event_type_metrics.csv');
+  }
 
-    $rows = $dataset['rows'];
-    $filename = $this->buildFilename($snapshot_id, 'membership_types_snapshot.csv', 'membership_types');
+  public function downloadSurveyMetricsData($snapshot_id) {
+    return $this->streamSnapshotDefinition((int) $snapshot_id, 'survey_metrics', 'survey_metrics.csv');
+  }
 
-    $response = new StreamedResponse(function() use ($header, $rows) {
-      $handle = fopen('php://output', 'r+');
-      fputcsv($handle, $header);
-      foreach ($rows as $row) {
-        fputcsv($handle, $row);
-      }
-      fclose($handle);
-    });
-
-    $response->headers->set('Content-Type', 'text/csv');
-    $response->headers->set('Content-Disposition', sprintf('attachment; filename="%s"', $filename));
-
-    return $response;
+  public function downloadToolAvailabilityData($snapshot_id) {
+    return $this->streamSnapshotDefinition((int) $snapshot_id, 'tool_availability', 'tool_availability.csv');
   }
 
   public function exportSnapshotPackage(string $snapshot_type, string $snapshot_date) {
@@ -196,6 +100,58 @@ class SnapshotDownloadController extends ControllerBase {
     });
 
     $response->headers->set('Content-Type', 'application/zip');
+    $response->headers->set('Content-Disposition', sprintf('attachment; filename="%s"', $filename));
+
+    return $response;
+  }
+
+  /**
+   * Streams a CSV for the requested snapshot definition.
+   */
+  protected function streamSnapshotDefinition(int $snapshot_id, string $definition, string $fallback_filename): StreamedResponse {
+    $snapshot = $this->database->select('ms_snapshot', 's')
+      ->fields('s', ['snapshot_type', 'snapshot_date', 'definition'])
+      ->condition('id', $snapshot_id)
+      ->execute()
+      ->fetchAssoc();
+
+    if (!$snapshot) {
+      throw $this->createNotFoundException();
+    }
+
+    if (!empty($snapshot['definition']) && $snapshot['definition'] !== $definition) {
+      throw $this->createNotFoundException();
+    }
+
+    $snapshot_type = (string) ($snapshot['snapshot_type'] ?? '');
+    $snapshot_date = (string) ($snapshot['snapshot_date'] ?? '');
+
+    $exportData = $this->snapshotService->getSnapshotExportData($snapshot_type, $snapshot_date);
+    $dataset = $exportData[$definition] ?? NULL;
+    if (empty($dataset)) {
+      throw $this->createNotFoundException();
+    }
+
+    $header = $dataset['header'] ?? [];
+    $rows = $dataset['rows'] ?? [];
+    $filename = $this->buildFilename($snapshot_id, $dataset['filename'] ?? $fallback_filename, $definition);
+
+    $response = new StreamedResponse(function () use ($header, $rows) {
+      $handle = fopen('php://output', 'w');
+      if (!empty($header)) {
+        fputcsv($handle, $header);
+      }
+      foreach ($rows as $row) {
+        $values = is_array($row) ? array_values($row) : [$row];
+        if (!empty($header) && count($values) !== count($header)) {
+          $values = array_pad($values, count($header), '');
+        }
+        fputcsv($handle, $values);
+      }
+      fclose($handle);
+    });
+
+    $response->headers->set('Content-Type', 'text/csv');
     $response->headers->set('Content-Disposition', sprintf('attachment; filename="%s"', $filename));
 
     return $response;

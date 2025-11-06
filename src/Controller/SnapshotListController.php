@@ -215,6 +215,21 @@ class SnapshotListController extends ControllerBase {
       case 'membership_types':
         return Url::fromRoute('makerspace_snapshot.download.membership_types', ['snapshot_id' => $snapshot_id]);
 
+      case 'event_registrations':
+        return Url::fromRoute('makerspace_snapshot.download.event_registrations', ['snapshot_id' => $snapshot_id]);
+
+      case 'donation_metrics':
+        return Url::fromRoute('makerspace_snapshot.download.donation_metrics', ['snapshot_id' => $snapshot_id]);
+
+      case 'event_type_metrics':
+        return Url::fromRoute('makerspace_snapshot.download.event_type_metrics', ['snapshot_id' => $snapshot_id]);
+
+      case 'survey_metrics':
+        return Url::fromRoute('makerspace_snapshot.download.survey_metrics', ['snapshot_id' => $snapshot_id]);
+
+      case 'tool_availability':
+        return Url::fromRoute('makerspace_snapshot.download.tool_availability', ['snapshot_id' => $snapshot_id]);
+
       default:
         return NULL;
     }

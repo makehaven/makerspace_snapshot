@@ -37,7 +37,10 @@ class SnapshotDownloadCenterForm extends SnapshotAdminBaseForm {
         '#open' => TRUE,
       ];
 
-      foreach (array_keys($historical_routes) as $definition) {
+      foreach ($datasets as $definition => $info) {
+        if (!isset($historical_routes[$definition])) {
+          continue;
+        }
         $links = $this->buildHistoricalDownloadLinks($definition);
         if (empty($links)) {
           continue;
