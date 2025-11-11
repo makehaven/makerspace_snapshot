@@ -69,9 +69,14 @@ class SnapshotHistoricalDownloadController extends ControllerBase {
     $headers = $this->resolveHeaders($definition, $fallbacks[$definition]);
     $filename = $this->buildFilename($definition, $snapshot_type);
 
-    $response = new StreamedResponse(function () use ($definition, $snapshot_type, $headers) {
+    $label_row = $this->snapshotService->getDatasetLabelRow($definition, $headers);
+
+    $response = new StreamedResponse(function () use ($definition, $snapshot_type, $headers, $label_row) {
       $handle = fopen('php://output', 'w');
       fputcsv($handle, $headers);
+      if ($this->hasLabelRowContent($label_row)) {
+        fputcsv($handle, $label_row);
+      }
       $this->streamHistoricalRows($handle, $definition, $snapshot_type, $headers);
       fclose($handle);
     });
@@ -130,6 +135,18 @@ class SnapshotHistoricalDownloadController extends ControllerBase {
       $ordered = array_merge($ordered, array_fill(0, $missing, ''));
     }
     return $ordered;
+  }
+
+  /**
+   * Determines whether a label row contains usable values.
+   */
+  protected function hasLabelRowContent(array $row): bool {
+    foreach ($row as $value) {
+      if ($value !== '' && $value !== NULL) {
+        return TRUE;
+      }
+    }
+    return FALSE;
   }
 
   /**
@@ -195,17 +212,8 @@ class SnapshotHistoricalDownloadController extends ControllerBase {
         'members_lapsed',
         'members_total',
       ],
-      'membership_activity' => [
-        'snapshot_date',
-        'joins',
-        'cancels',
-        'net_change',
-      ],
       'plan_levels' => [
         'snapshot_date',
-        'plan_code',
-        'plan_label',
-        'count_members',
       ],
       'event_registrations' => [
         'snapshot_date',
@@ -218,6 +226,14 @@ class SnapshotHistoricalDownloadController extends ControllerBase {
         'snapshot_date',
         'members_total',
       ],
+      'membership_type_joins' => [
+        'snapshot_date',
+        'joins_total',
+      ],
+      'membership_type_cancels' => [
+        'snapshot_date',
+        'cancels_total',
+      ],
       'donation_metrics' => [
         'snapshot_date',
         'period_year',
@@ -229,9 +245,23 @@ class SnapshotHistoricalDownloadController extends ControllerBase {
         'onetime_contributions_count',
         'recurring_donors_count',
         'onetime_donors_count',
+        'first_time_donors_count',
         'total_amount',
         'recurring_amount',
         'onetime_amount',
+      ],
+      'donation_range_metrics' => [
+        'snapshot_date',
+        'period_year',
+        'period_month',
+        'is_year_to_date',
+        'range_key',
+        'range_label',
+        'min_amount',
+        'max_amount',
+        'donors_count',
+        'contributions_count',
+        'total_amount',
       ],
       'event_type_metrics' => [
         'snapshot_date',
@@ -240,9 +270,19 @@ class SnapshotHistoricalDownloadController extends ControllerBase {
         'period_month',
         'event_type_id',
         'event_type_label',
+        'events_count',
         'participant_count',
         'total_amount',
         'average_ticket',
+      ],
+      'event_type_counts' => [
+        'snapshot_date',
+      ],
+      'event_type_registrations' => [
+        'snapshot_date',
+      ],
+      'event_type_revenue' => [
+        'snapshot_date',
       ],
       'survey_metrics' => [
         'snapshot_date',

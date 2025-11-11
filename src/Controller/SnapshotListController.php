@@ -209,20 +209,29 @@ class SnapshotListController extends ControllerBase {
       case 'plan_levels':
         return Url::fromRoute('makerspace_snapshot.download.plan_level', ['snapshot_id' => $snapshot_id]);
 
-      case 'membership_activity':
-        return Url::fromRoute('makerspace_snapshot.download.membership_activity', ['snapshot_id' => $snapshot_id]);
-
       case 'membership_types':
         return Url::fromRoute('makerspace_snapshot.download.membership_types', ['snapshot_id' => $snapshot_id]);
+      case 'membership_type_joins':
+        return Url::fromRoute('makerspace_snapshot.download.membership_type_joins', ['snapshot_id' => $snapshot_id]);
+      case 'membership_type_cancels':
+        return Url::fromRoute('makerspace_snapshot.download.membership_type_cancels', ['snapshot_id' => $snapshot_id]);
 
       case 'event_registrations':
         return Url::fromRoute('makerspace_snapshot.download.event_registrations', ['snapshot_id' => $snapshot_id]);
 
       case 'donation_metrics':
         return Url::fromRoute('makerspace_snapshot.download.donation_metrics', ['snapshot_id' => $snapshot_id]);
+      case 'donation_range_metrics':
+        return Url::fromRoute('makerspace_snapshot.download.donation_range_metrics', ['snapshot_id' => $snapshot_id]);
 
       case 'event_type_metrics':
         return Url::fromRoute('makerspace_snapshot.download.event_type_metrics', ['snapshot_id' => $snapshot_id]);
+      case 'event_type_counts':
+        return Url::fromRoute('makerspace_snapshot.download.event_type_counts', ['snapshot_id' => $snapshot_id]);
+      case 'event_type_registrations':
+        return Url::fromRoute('makerspace_snapshot.download.event_type_registrations', ['snapshot_id' => $snapshot_id]);
+      case 'event_type_revenue':
+        return Url::fromRoute('makerspace_snapshot.download.event_type_revenue', ['snapshot_id' => $snapshot_id]);
 
       case 'survey_metrics':
         return Url::fromRoute('makerspace_snapshot.download.survey_metrics', ['snapshot_id' => $snapshot_id]);

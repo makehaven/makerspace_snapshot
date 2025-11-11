@@ -33,12 +33,16 @@ class SnapshotDownloadController extends ControllerBase {
     return $this->streamSnapshotDefinition((int) $snapshot_id, 'plan_levels', 'plan_levels.csv');
   }
 
-  public function downloadMembershipActivityData($snapshot_id) {
-    return $this->streamSnapshotDefinition((int) $snapshot_id, 'membership_activity', 'membership_activity.csv');
-  }
-
   public function downloadMembershipTypesData($snapshot_id) {
     return $this->streamSnapshotDefinition((int) $snapshot_id, 'membership_types', 'membership_types.csv');
+  }
+
+  public function downloadMembershipTypeJoinsData($snapshot_id) {
+    return $this->streamSnapshotDefinition((int) $snapshot_id, 'membership_type_joins', 'membership_type_joins.csv');
+  }
+
+  public function downloadMembershipTypeCancelsData($snapshot_id) {
+    return $this->streamSnapshotDefinition((int) $snapshot_id, 'membership_type_cancels', 'membership_type_cancels.csv');
   }
 
   public function downloadEventRegistrationsData($snapshot_id) {
@@ -49,8 +53,24 @@ class SnapshotDownloadController extends ControllerBase {
     return $this->streamSnapshotDefinition((int) $snapshot_id, 'donation_metrics', 'donation_metrics.csv');
   }
 
+  public function downloadDonationRangeData($snapshot_id) {
+    return $this->streamSnapshotDefinition((int) $snapshot_id, 'donation_range_metrics', 'donation_range_metrics.csv');
+  }
+
   public function downloadEventTypeMetricsData($snapshot_id) {
     return $this->streamSnapshotDefinition((int) $snapshot_id, 'event_type_metrics', 'event_type_metrics.csv');
+  }
+
+  public function downloadEventTypeCountsData($snapshot_id) {
+    return $this->streamSnapshotDefinition((int) $snapshot_id, 'event_type_counts', 'event_type_counts.csv');
+  }
+
+  public function downloadEventTypeRegistrationsData($snapshot_id) {
+    return $this->streamSnapshotDefinition((int) $snapshot_id, 'event_type_registrations', 'event_type_registrations.csv');
+  }
+
+  public function downloadEventTypeRevenueData($snapshot_id) {
+    return $this->streamSnapshotDefinition((int) $snapshot_id, 'event_type_revenue', 'event_type_revenue.csv');
   }
 
   public function downloadSurveyMetricsData($snapshot_id) {
@@ -85,6 +105,10 @@ class SnapshotDownloadController extends ControllerBase {
 
       foreach ($exportData as $dataset => $info) {
         $handle = fopen('php://temp', 'w+');
+        $label_row = $info['label_row'] ?? [];
+        if ($this->hasLabelRowContent($label_row)) {
+          fputcsv($handle, $label_row);
+        }
         fputcsv($handle, $info['header']);
         foreach ($info['rows'] as $row) {
           fputcsv($handle, $row);
@@ -133,11 +157,15 @@ class SnapshotDownloadController extends ControllerBase {
     }
 
     $header = $dataset['header'] ?? [];
+    $label_row = $dataset['label_row'] ?? [];
     $rows = $dataset['rows'] ?? [];
     $filename = $this->buildFilename($snapshot_id, $dataset['filename'] ?? $fallback_filename, $definition);
 
-    $response = new StreamedResponse(function () use ($header, $rows) {
+    $response = new StreamedResponse(function () use ($header, $label_row, $rows) {
       $handle = fopen('php://output', 'w');
+      if ($this->hasLabelRowContent($label_row)) {
+        fputcsv($handle, $label_row);
+      }
       if (!empty($header)) {
         fputcsv($handle, $header);
       }
@@ -209,6 +237,18 @@ class SnapshotDownloadController extends ControllerBase {
     }
 
     return $base . '.csv';
+  }
+
+  /**
+   * Determines if a label row contains at least one non-empty value.
+   */
+  protected function hasLabelRowContent(array $row): bool {
+    foreach ($row as $value) {
+      if ($value !== '' && $value !== NULL) {
+        return TRUE;
+      }
+    }
+    return FALSE;
   }
 
 }

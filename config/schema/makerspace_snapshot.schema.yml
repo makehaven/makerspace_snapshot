@@ -53,3 +53,19 @@ makerspace_snapshot.plan_levels:
           group:
             type: string
             label: 'Optional grouping'
+makerspace_snapshot.event_types:
+  type: config_object
+  label: 'Makerspace Snapshot Event Types'
+  mapping:
+    types:
+      type: sequence
+      label: 'Event type definitions'
+      sequence:
+        type: mapping
+        mapping:
+          id:
+            type: integer
+            label: 'Event type ID'
+          label:
+            type: string
+            label: 'Event type label'

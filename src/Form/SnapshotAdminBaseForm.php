@@ -152,6 +152,9 @@ abstract class SnapshotAdminBaseForm extends FormBase {
       case 'placeholder':
         return (string) $this->t('Planned Integration');
 
+      case 'derived':
+        return (string) $this->t('Derived');
+
       default:
         return (string) $this->t('@mode', ['@mode' => $acquisition]);
     }
@@ -181,6 +184,9 @@ abstract class SnapshotAdminBaseForm extends FormBase {
       case 'placeholder':
         return (string) $this->t('This dataset is planned for a future integration. Data collection will begin once the source is wired.');
 
+      case 'derived':
+        return (string) $this->t('This dataset is derived from other automated sources and does not have its own SQL.');
+
       default:
         return (string) $this->t('No automated SQL source has been implemented for this dataset yet.');
     }
@@ -195,6 +201,8 @@ abstract class SnapshotAdminBaseForm extends FormBase {
     $source_queries = $this->snapshotService->getSourceQueries();
     $dataset_map = $this->snapshotService->getDatasetSourceMap();
     $definition_metadata = $this->snapshotService->buildDefinitions();
+
+    $raw_sections = [];
 
     foreach ($dataset_map as $dataset_key => $dataset) {
       $dataset_section = [
@@ -284,7 +292,33 @@ abstract class SnapshotAdminBaseForm extends FormBase {
         ];
       }
 
-      $sections['dataset_' . $dataset_key] = $dataset_section;
+      $raw_sections['dataset_' . $dataset_key] = $dataset_section;
+    }
+
+    $sections = [];
+    foreach ($this->getDatasetCategoryMap() as $category_key => $category_info) {
+      $category_container = [
+        '#type' => 'details',
+        '#title' => $category_info['label'],
+        '#open' => (bool) ($category_info['open'] ?? FALSE),
+      ];
+      $has_items = FALSE;
+      foreach ($category_info['definitions'] as $definition) {
+        $section_key = 'dataset_' . $definition;
+        if (isset($raw_sections[$section_key])) {
+          $category_container[$section_key] = $raw_sections[$section_key];
+          unset($raw_sections[$section_key]);
+          $has_items = TRUE;
+        }
+      }
+      if ($has_items) {
+        $sections['category_' . $category_key] = $category_container;
+      }
+    }
+
+    // Append any remaining datasets that were not categorized.
+    foreach ($raw_sections as $key => $section) {
+      $sections[$key] = $section;
     }
 
     return $sections;
@@ -299,12 +333,17 @@ abstract class SnapshotAdminBaseForm extends FormBase {
   protected function getHistoricalDownloadRouteMap(): array {
     $supported = [
       'membership_totals',
-      'membership_activity',
       'plan_levels',
       'event_registrations',
       'membership_types',
+      'membership_type_joins',
+      'membership_type_cancels',
       'donation_metrics',
+      'donation_range_metrics',
       'event_type_metrics',
+      'event_type_counts',
+      'event_type_registrations',
+      'event_type_revenue',
       'survey_metrics',
       'tool_availability',
     ];
@@ -352,6 +391,44 @@ abstract class SnapshotAdminBaseForm extends FormBase {
     }
 
     return $links;
+  }
+
+  /**
+   * Provides dataset grouping metadata for admin listings.
+   */
+  protected function getDatasetCategoryMap(): array {
+    return [
+      'membership' => [
+        'label' => $this->t('Membership datasets'),
+        'definitions' => [
+          'membership_totals',
+          'plan_levels',
+          'membership_types',
+          'membership_type_joins',
+          'membership_type_cancels',
+        ],
+        'open' => TRUE,
+      ],
+      'fundraising' => [
+        'label' => $this->t('Fundraising datasets'),
+        'definitions' => [
+          'donation_metrics',
+          'donation_range_metrics',
+        ],
+        'open' => FALSE,
+      ],
+      'events' => [
+        'label' => $this->t('Event datasets'),
+        'definitions' => [
+          'event_registrations',
+          'event_type_metrics',
+          'event_type_counts',
+          'event_type_registrations',
+          'event_type_revenue',
+        ],
+        'open' => FALSE,
+      ],
+    ];
   }
 
   /**

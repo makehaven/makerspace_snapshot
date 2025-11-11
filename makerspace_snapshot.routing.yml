@@ -137,22 +137,35 @@ makerspace_snapshot.download.plan_level:
     parameters:
       snapshot_id:
         type: integer
-makerspace_snapshot.download.membership_activity:
-  path: '/admin/config/makerspace/snapshot/download-activity/{snapshot_id}'
+makerspace_snapshot.download.membership_types:
+  path: '/admin/config/makerspace/snapshot/download-types/{snapshot_id}'
   defaults:
-    _controller: '\Drupal\makerspace_snapshot\Controller\SnapshotDownloadController::downloadMembershipActivityData'
-    _title: 'Download Membership Activity Data'
+    _controller: '\Drupal\makerspace_snapshot\Controller\SnapshotDownloadController::downloadMembershipTypesData'
+    _title: 'Download Membership Types Data'
   requirements:
     _permission: 'administer site configuration'
   options:
     parameters:
       snapshot_id:
         type: integer
-makerspace_snapshot.download.membership_types:
-  path: '/admin/config/makerspace/snapshot/download-types/{snapshot_id}'
+
+makerspace_snapshot.download.membership_type_joins:
+  path: '/admin/config/makerspace/snapshot/download-types-joins/{snapshot_id}'
   defaults:
-    _controller: '\Drupal\makerspace_snapshot\Controller\SnapshotDownloadController::downloadMembershipTypesData'
-    _title: 'Download Membership Types Data'
+    _controller: '\Drupal\makerspace_snapshot\Controller\SnapshotDownloadController::downloadMembershipTypeJoinsData'
+    _title: 'Download Membership Type Joins Data'
+  requirements:
+    _permission: 'administer site configuration'
+  options:
+    parameters:
+      snapshot_id:
+        type: integer
+
+makerspace_snapshot.download.membership_type_cancels:
+  path: '/admin/config/makerspace/snapshot/download-types-cancels/{snapshot_id}'
+  defaults:
+    _controller: '\Drupal\makerspace_snapshot\Controller\SnapshotDownloadController::downloadMembershipTypeCancelsData'
+    _title: 'Download Membership Type Cancels Data'
   requirements:
     _permission: 'administer site configuration'
   options:
@@ -184,11 +197,59 @@ makerspace_snapshot.download.donation_metrics:
       snapshot_id:
         type: integer
 
+makerspace_snapshot.download.donation_range_metrics:
+  path: '/admin/config/makerspace/snapshot/download-donation-ranges/{snapshot_id}'
+  defaults:
+    _controller: '\Drupal\makerspace_snapshot\Controller\SnapshotDownloadController::downloadDonationRangeData'
+    _title: 'Download Donation Range Metrics Data'
+  requirements:
+    _permission: 'administer site configuration'
+  options:
+    parameters:
+      snapshot_id:
+        type: integer
+
 makerspace_snapshot.download.event_type_metrics:
   path: '/admin/config/makerspace/snapshot/download-event-types/{snapshot_id}'
   defaults:
     _controller: '\Drupal\makerspace_snapshot\Controller\SnapshotDownloadController::downloadEventTypeMetricsData'
     _title: 'Download Event Type Metrics Data'
+  requirements:
+    _permission: 'administer site configuration'
+  options:
+    parameters:
+      snapshot_id:
+        type: integer
+
+makerspace_snapshot.download.event_type_counts:
+  path: '/admin/config/makerspace/snapshot/download-event-type-counts/{snapshot_id}'
+  defaults:
+    _controller: '\Drupal\makerspace_snapshot\Controller\SnapshotDownloadController::downloadEventTypeCountsData'
+    _title: 'Download Event Type Counts Data'
+  requirements:
+    _permission: 'administer site configuration'
+  options:
+    parameters:
+      snapshot_id:
+        type: integer
+
+makerspace_snapshot.download.event_type_registrations:
+  path: '/admin/config/makerspace/snapshot/download-event-type-registrations/{snapshot_id}'
+  defaults:
+    _controller: '\Drupal\makerspace_snapshot\Controller\SnapshotDownloadController::downloadEventTypeRegistrationsData'
+    _title: 'Download Event Type Registrations Data'
+  requirements:
+    _permission: 'administer site configuration'
+  options:
+    parameters:
+      snapshot_id:
+        type: integer
+
+makerspace_snapshot.download.event_type_revenue:
+  path: '/admin/config/makerspace/snapshot/download-event-type-revenue/{snapshot_id}'
+  defaults:
+    _controller: '\Drupal\makerspace_snapshot\Controller\SnapshotDownloadController::downloadEventTypeRevenueData'
+    _title: 'Download Event Type Revenue Data'
   requirements:
     _permission: 'administer site configuration'
   options:

@@ -1,0 +1,9 @@
+services:
+  makerspace_snapshot.commands:
+    class: Drupal\makerspace_snapshot\Commands\MakerspaceSnapshotCommands
+    arguments:
+      - '@database'
+      - '@logger.channel.makerspace_snapshot'
+      - '@makerspace_snapshot.snapshot_service'
+    tags:
+      - { name: drush.command }

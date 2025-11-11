@@ -10,9 +10,15 @@ use Drupal\makerspace_snapshot\SnapshotService;
 
 class MakerspaceSnapshotCommands extends DrushCommands {
 
-  protected $db;
-  protected $logger;
-  protected $snapshotService;
+  /**
+   * Database connection.
+   */
+  protected Connection $db;
+
+  /**
+   * Snapshot service.
+   */
+  protected SnapshotService $snapshotService;
 
   public function __construct(Connection $db, LoggerInterface $logger, SnapshotService $snapshotService) {
     parent::__construct();
@@ -30,16 +36,16 @@ class MakerspaceSnapshotCommands extends DrushCommands {
    * @option is-test Mark this snapshot as a test snapshot.
    * @usage drush makerspace-snapshot:snapshot --snapshot-date=2025-09-30 --snapshot-type=monthly
    */
-    public function snapshot(array $args = [], array $options = [
-        'snapshot-date' => InputOption::VALUE_REQUIRED,
-        'snapshot-type' => InputOption::VALUE_REQUIRED,
-        'is-test' => InputOption::VALUE_NONE,
-    ]) {
-        $this->snapshotService->takeSnapshot(
-            $options['snapshot-type'] ?? 'monthly',
-            $options['is-test'] ?? FALSE,
-            $options['snapshot-date'] ?? NULL,
-            'manual_drush'
-        );
+  public function snapshot(array $args, array $options = [
+    'snapshot-date' => InputOption::VALUE_OPTIONAL,
+    'snapshot-type' => InputOption::VALUE_OPTIONAL,
+    'is-test' => InputOption::VALUE_NONE,
+  ]): void {
+    $this->snapshotService->takeSnapshot(
+      $options['snapshot-type'] ?? 'monthly',
+      $options['is-test'] ?? FALSE,
+      $options['snapshot-date'] ?? NULL,
+      'manual_drush'
+    );
   }
 }

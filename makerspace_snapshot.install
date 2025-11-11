@@ -120,6 +120,7 @@ function makerspace_snapshot_schema() {
       'onetime_contributions_count' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
       'recurring_donors_count' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
       'onetime_donors_count' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'first_time_donors_count' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
       'total_amount' => ['type' => 'numeric', 'precision' => 18, 'scale' => 2, 'not null' => TRUE, 'default' => '0.00'],
       'recurring_amount' => ['type' => 'numeric', 'precision' => 18, 'scale' => 2, 'not null' => TRUE, 'default' => '0.00'],
       'onetime_amount' => ['type' => 'numeric', 'precision' => 18, 'scale' => 2, 'not null' => TRUE, 'default' => '0.00'],
@@ -127,6 +128,27 @@ function makerspace_snapshot_schema() {
     'primary key' => ['snapshot_id'],
     'indexes' => [
       'period_idx' => ['period_year', 'period_month'],
+    ],
+  ];
+
+  $schema['ms_fact_donation_range_snapshot'] = [
+    'description' => 'Donation range breakdown metrics aggregated per snapshot.',
+    'fields' => [
+      'snapshot_id' => ['type' => 'int', 'not null' => TRUE],
+      'period_year' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'period_month' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'is_year_to_date' => ['type' => 'int', 'size' => 'tiny', 'not null' => TRUE, 'default' => 1],
+      'range_key' => ['type' => 'varchar', 'length' => 64, 'not null' => TRUE],
+      'range_label' => ['type' => 'varchar', 'length' => 255, 'not null' => TRUE, 'default' => ''],
+      'min_amount' => ['type' => 'numeric', 'precision' => 18, 'scale' => 2, 'not null' => TRUE, 'default' => '0.00'],
+      'max_amount' => ['type' => 'numeric', 'precision' => 18, 'scale' => 2, 'not null' => FALSE],
+      'donors_count' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'contributions_count' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'total_amount' => ['type' => 'numeric', 'precision' => 18, 'scale' => 2, 'not null' => TRUE, 'default' => '0.00'],
+    ],
+    'primary key' => ['snapshot_id', 'range_key', 'is_year_to_date'],
+    'indexes' => [
+      'period_idx' => ['period_year', 'period_month', 'is_year_to_date'],
     ],
   ];
 
@@ -139,6 +161,7 @@ function makerspace_snapshot_schema() {
       'period_quarter' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
       'event_type_id' => ['type' => 'int', 'not null' => FALSE],
       'event_type_label' => ['type' => 'varchar', 'length' => 255, 'not null' => TRUE, 'default' => 'Unknown'],
+      'events_count' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
       'participant_count' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
       'total_amount' => ['type' => 'numeric', 'precision' => 18, 'scale' => 2, 'not null' => TRUE, 'default' => '0.00'],
       'average_ticket' => ['type' => 'numeric', 'precision' => 18, 'scale' => 2, 'not null' => TRUE, 'default' => '0.00'],
@@ -196,6 +219,56 @@ function makerspace_snapshot_schema() {
   ];
 
   return $schema;
+}
+
+/**
+ * Provides the default donation range definitions.
+ */
+function makerspace_snapshot_default_donation_ranges(): array {
+  return [
+    [
+      'id' => 'under_100',
+      'label' => 'Under $100',
+      'min' => 0,
+      'max' => 99.99,
+    ],
+    [
+      'id' => '100_249',
+      'label' => '$100 - $249',
+      'min' => 100,
+      'max' => 249.99,
+    ],
+    [
+      'id' => '250_499',
+      'label' => '$250 - $499',
+      'min' => 250,
+      'max' => 499.99,
+    ],
+    [
+      'id' => '500_999',
+      'label' => '$500 - $999',
+      'min' => 500,
+      'max' => 999.99,
+    ],
+    [
+      'id' => '1000_2499',
+      'label' => '$1,000 - $2,499',
+      'min' => 1000,
+      'max' => 2499.99,
+    ],
+    [
+      'id' => '2500_4999',
+      'label' => '$2,500 - $4,999',
+      'min' => 2500,
+      'max' => 4999.99,
+    ],
+    [
+      'id' => '5000_plus',
+      'label' => '$5,000+',
+      'min' => 5000,
+      'max' => NULL,
+    ],
+  ];
 }
 
 /**
@@ -588,5 +661,46 @@ function makerspace_snapshot_update_10014() {
   $config = \Drupal::configFactory()->getEditable('makerspace_snapshot.membership_types');
   if ($config->isNew()) {
     $config->set('columns', [])->save();
+  }
+}
+
+/**
+ * Add event summary fact table and events_count column.
+ */
+function makerspace_snapshot_update_10015() {
+  $schema = \Drupal::database()->schema();
+
+  if ($schema->tableExists('ms_fact_event_type_snapshot') && !$schema->fieldExists('ms_fact_event_type_snapshot', 'events_count')) {
+    $schema->addField('ms_fact_event_type_snapshot', 'events_count', [
+      'type' => 'int',
+      'not null' => TRUE,
+      'default' => 0,
+    ]);
+  }
+}
+
+/**
+ * Add donation range fact table and first-time donor counts.
+ */
+function makerspace_snapshot_update_10016() {
+  $connection = \Drupal::database();
+  $schema = $connection->schema();
+  $definitions = makerspace_snapshot_schema();
+
+  if ($schema->tableExists('ms_fact_donation_snapshot') && !$schema->fieldExists('ms_fact_donation_snapshot', 'first_time_donors_count')) {
+    $schema->addField('ms_fact_donation_snapshot', 'first_time_donors_count', [
+      'type' => 'int',
+      'not null' => TRUE,
+      'default' => 0,
+    ]);
+  }
+
+  if (!$schema->tableExists('ms_fact_donation_range_snapshot')) {
+    $schema->createTable('ms_fact_donation_range_snapshot', $definitions['ms_fact_donation_range_snapshot']);
+  }
+
+  $config = \Drupal::configFactory()->getEditable('makerspace_snapshot.donation_ranges');
+  if ($config->isNew()) {
+    $config->set('ranges', makerspace_snapshot_default_donation_ranges())->save();
   }
 }
