@@ -78,7 +78,7 @@ class SnapshotTemplateController extends ControllerBase {
   protected function getExampleData($definition) {
     switch ($definition) {
       case 'membership_totals':
-        return ['2025-01-01', 100, 10, 5, 110];
+        return ['2025-01-01', 100, 10, 5, 110, 12, 4, 8];
       case 'event_registrations':
         return ['2025-01-01', 123, 'Intro to Woodworking', '2025-01-15', 12];
       case 'plan_levels':

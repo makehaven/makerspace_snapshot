@@ -104,7 +104,7 @@ makerspace_snapshot.safe_cache_clear:
     _controller: '\Drupal\makerspace_snapshot\Controller\SafeCacheClearController::clearCache'
     _title: 'Safe Cache Clear'
   requirements:
-    _permission: 'access content'
+    _permission: 'administer site configuration'
 
 makerspace_snapshot.download_template:
   path: '/admin/config/makerspace/snapshot/template/{definition}'

@@ -344,7 +344,16 @@ SQL,
     'membership_totals' => [
       'label' => 'Membership Totals',
       'schedules' => ['monthly', 'quarterly', 'annually'],
-      'headers' => ['snapshot_date', 'members_active', 'members_paused', 'members_lapsed', 'members_total'],
+      'headers' => [
+        'snapshot_date',
+        'members_active',
+        'members_paused',
+        'members_lapsed',
+        'members_total',
+        'joins',
+        'cancels',
+        'net_change',
+      ],
       'dataset_type' => 'membership_totals',
       'acquisition' => 'automated',
       'data_source' => 'Drupal SQL',
@@ -515,6 +524,16 @@ SQL,
       'acquisition' => 'placeholder',
       'data_source' => 'External API',
     ],
+  ];
+
+  /**
+   * Cache tags keyed by dataset definition.
+   *
+   * @var array
+   */
+  protected array $cacheTagsByDefinition = [
+    'membership_totals' => ['makerspace_snapshot:org'],
+    'plan_levels' => ['makerspace_snapshot:plan'],
   ];
 
   /**
@@ -736,10 +755,11 @@ SQL,
             'members_active' => $members_active,
             'members_paused' => $members_paused,
             'members_lapsed' => $members_lapsed,
-            'joins'          => 0,
-            'cancels'        => 0,
-            'net_change'     => 0,
+            'joins'          => $joins_count,
+            'cancels'        => $cancels_count,
+            'net_change'     => $net_change,
           ])->execute();
+        $this->invalidateDatasetCache('membership_totals');
       }
 
       if (isset($snapshotIds['membership_types'])) {
@@ -796,6 +816,7 @@ SQL,
               'count_members'  => $plan['count_members'],
             ])->execute();
         }
+        $this->invalidateDatasetCache('plan_levels');
       }
 
       $needsDonationMetrics = isset($snapshotIds['donation_metrics']) || isset($snapshotIds['donation_range_metrics']);
@@ -2276,6 +2297,11 @@ SQL,
     $members_paused = (int) ($payload['totals']['members_paused'] ?? 0);
     $members_lapsed = (int) ($payload['totals']['members_lapsed'] ?? 0);
     $members_total = (int) ($payload['totals']['members_total'] ?? ($members_active + $members_paused));
+    $joins = (int) ($payload['totals']['joins'] ?? 0);
+    $cancels = (int) ($payload['totals']['cancels'] ?? 0);
+    $net_change = array_key_exists('net_change', $payload['totals'] ?? [])
+      ? (int) $payload['totals']['net_change']
+      : ($joins - $cancels);
 
     $this->database->merge('ms_fact_org_snapshot')
       ->key(['snapshot_id' => $snapshot_id])
@@ -2284,10 +2310,11 @@ SQL,
         'members_active' => $members_active,
         'members_paused' => $members_paused,
         'members_lapsed' => $members_lapsed,
-        'joins'          => 0,
-        'cancels'        => 0,
-        'net_change'     => 0,
+        'joins'          => $joins,
+        'cancels'        => $cancels,
+        'net_change'     => $net_change,
       ])->execute();
+    $this->invalidateDatasetCache('membership_totals');
 
     if (isset($payload['plans'])) {
       $this->importPlanLevelsSnapshot($snapshot_id, ['plans' => $payload['plans']]);
@@ -2326,6 +2353,7 @@ SQL,
         ])
         ->execute();
     }
+    $this->invalidateDatasetCache('plan_levels');
   }
 
   protected function importMembershipTypesSnapshot($snapshot_id, array $payload) {
@@ -3224,6 +3252,12 @@ SQL,
       throw new \InvalidArgumentException('Snapshot ID is required.');
     }
 
+    $snapshotDefinition = $this->database->select('ms_snapshot', 's')
+      ->fields('s', ['definition'])
+      ->condition('id', $snapshot_id)
+      ->execute()
+      ->fetchField();
+
     $transaction = $this->database->startTransaction();
     try {
       $this->database->delete('ms_snapshot')
@@ -3255,11 +3289,27 @@ SQL,
         ->execute();
 
       $this->logger->info('Deleted snapshot with ID @id.', ['@id' => $snapshot_id]);
+      if ($snapshotDefinition) {
+        $this->invalidateDatasetCache((string) $snapshotDefinition);
+      }
     }
     catch (\Exception $e) {
       $transaction->rollBack();
       $this->logger->error('Error deleting snapshot with ID @id: @message', ['@id' => $snapshot_id, '@message' => $e->getMessage()]);
       throw $e;
     }
+  }
+
+  /**
+   * Invalidates cache tags for a dataset definition.
+   *
+   * @param string $definition
+   *   Dataset machine name.
+   */
+  protected function invalidateDatasetCache(string $definition): void {
+    if (!isset($this->cacheTagsByDefinition[$definition])) {
+      return;
+    }
+    Cache::invalidateTags($this->cacheTagsByDefinition[$definition]);
   }
 }

@@ -346,12 +346,20 @@ class SnapshotImportForm extends SnapshotAdminBaseForm {
           $members_total = isset($row['members_total']) && $row['members_total'] !== ''
             ? (int) $row['members_total']
             : ($members_active + $members_paused);
+          $joins = (int) ($row['joins'] ?? 0);
+          $cancels = (int) ($row['cancels'] ?? 0);
+          $net_change = isset($row['net_change']) && $row['net_change'] !== ''
+            ? (int) $row['net_change']
+            : ($joins - $cancels);
 
           $import_data[$normalized_date]['membership_totals']['totals'] = [
             'members_active' => $members_active,
             'members_paused' => $members_paused,
             'members_lapsed' => $members_lapsed,
             'members_total' => $members_total,
+            'joins' => $joins,
+            'cancels' => $cancels,
+            'net_change' => $net_change,
           ];
           $all_dates[] = $normalized_date;
         }

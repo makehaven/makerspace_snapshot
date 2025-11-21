@@ -211,6 +211,9 @@ class SnapshotHistoricalDownloadController extends ControllerBase {
         'members_paused',
         'members_lapsed',
         'members_total',
+        'joins',
+        'cancels',
+        'net_change',
       ],
       'plan_levels' => [
         'snapshot_date',
