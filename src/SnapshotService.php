@@ -2259,7 +2259,7 @@ SQL,
 
     switch ($definition) {
       case 'membership_totals':
-        $this->importMembershipSnapshot($snapshot_id, $payload);
+        $this->importMembershipSnapshot((int) $snapshot_id, $payload);
         break;
       case 'plan_levels':
         $this->importPlanLevelsSnapshot($snapshot_id, $payload);
@@ -2303,9 +2303,13 @@ SQL,
       ? (int) $payload['totals']['net_change']
       : ($joins - $cancels);
 
-    $this->database->merge('ms_fact_org_snapshot')
-      ->key(['snapshot_id' => $snapshot_id])
+    $this->database->delete('ms_fact_org_snapshot')
+      ->condition('snapshot_id', (int) $snapshot_id)
+      ->execute();
+
+    $this->database->insert('ms_fact_org_snapshot')
       ->fields([
+        'snapshot_id'    => (int) $snapshot_id,
         'members_total'  => $members_total,
         'members_active' => $members_active,
         'members_paused' => $members_paused,
@@ -2399,13 +2403,17 @@ SQL,
       'onetime_amount' => round((float) ($metrics['onetime_amount'] ?? 0), 2),
     ];
 
-    $merge = $this->database->merge('ms_fact_donation_snapshot')
-      ->key(['snapshot_id' => $snapshot_id])
-      ->fields($fields);
+    $this->database->delete('ms_fact_donation_snapshot')
+      ->condition('snapshot_id', (int) $snapshot_id)
+      ->execute();
+
     if ($this->donationSnapshotHasFirstTimeColumn() && isset($metrics['first_time_donors_count'])) {
-      $merge->fields(['first_time_donors_count' => (int) $metrics['first_time_donors_count']]);
+      $fields['first_time_donors_count'] = (int) $metrics['first_time_donors_count'];
     }
-    $merge->execute();
+
+    $this->database->insert('ms_fact_donation_snapshot')
+      ->fields($fields)
+      ->execute();
   }
 
   protected function importDonationRangeSnapshot($snapshot_id, array $payload) {
@@ -2447,13 +2455,18 @@ SQL,
   }
 
   protected function importEventSnapshot($snapshot_id, array $payload) {
+    $this->database->delete('ms_fact_event_snapshot')
+      ->condition('snapshot_id', (int) $snapshot_id)
+      ->execute();
+
     foreach ($payload['events'] as $event) {
-      $this->database->merge('ms_fact_event_snapshot')
-        ->key(['snapshot_id' => $snapshot_id, 'event_id' => $event['event_id']])
+      $this->database->insert('ms_fact_event_snapshot')
         ->fields([
+          'snapshot_id'        => (int) $snapshot_id,
+          'event_id'           => (int) $event['event_id'],
           'event_title'        => $event['event_title'],
           'event_start_date'   => $event['event_start_date'],
-          'registration_count' => $event['registration_count'],
+          'registration_count' => (int) $event['registration_count'],
         ])->execute();
     }
   }
@@ -2526,8 +2539,11 @@ SQL,
       'vibe_score' => round((float) ($metrics['vibe_score'] ?? 0), 2),
     ];
 
-    $this->database->merge('ms_fact_survey_snapshot')
-      ->key(['snapshot_id' => $snapshot_id])
+    $this->database->delete('ms_fact_survey_snapshot')
+      ->condition('snapshot_id', (int) $snapshot_id)
+      ->execute();
+
+    $this->database->insert('ms_fact_survey_snapshot')
       ->fields($fields)
       ->execute();
   }
@@ -2551,8 +2567,11 @@ SQL,
       'availability_percent' => round((float) ($metrics['availability_percent'] ?? 0), 2),
     ];
 
-    $this->database->merge('ms_fact_tool_uptime_snapshot')
-      ->key(['snapshot_id' => $snapshot_id])
+    $this->database->delete('ms_fact_tool_uptime_snapshot')
+      ->condition('snapshot_id', (int) $snapshot_id)
+      ->execute();
+
+    $this->database->insert('ms_fact_tool_uptime_snapshot')
       ->fields($fields)
       ->execute();
   }

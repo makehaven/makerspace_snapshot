@@ -20,10 +20,9 @@ class MakerspaceSnapshotCommands extends DrushCommands {
    */
   protected SnapshotService $snapshotService;
 
-  public function __construct(Connection $db, LoggerInterface $logger, SnapshotService $snapshotService) {
+  public function __construct(Connection $db, SnapshotService $snapshotService) {
     parent::__construct();
     $this->db = $db;
-    $this->logger = $logger;
     $this->snapshotService = $snapshotService;
   }
 
