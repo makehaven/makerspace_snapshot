@@ -200,13 +200,25 @@ SQL,
     ],
     'sql_cancels' => [
       'label' => 'Cancels in period',
-      'description' => 'Placeholder query for cancellations; replace with site-specific logic that records membership cancellations between :start and :end.',
+      'description' => 'Records membership cancellations based on the profile end date falling between :start and :end.',
       'sql' => <<<SQL
-SELECT NULL AS member_id,
-       NULL AS plan_code,
-       NULL AS plan_label,
-       NULL AS occurred_at
-WHERE 1 = 0
+SELECT u.uid AS member_id,
+       CASE
+         WHEN NULLIF(plan.field_user_chargebee_plan_value, '') IS NULL THEN 'UNASSIGNED'
+         WHEN LOCATE('@', plan.field_user_chargebee_plan_value) > 0 THEN 'UNASSIGNED'
+         ELSE plan.field_user_chargebee_plan_value
+       END AS plan_code,
+       CASE
+         WHEN NULLIF(plan.field_user_chargebee_plan_value, '') IS NULL THEN 'Unassigned'
+         WHEN LOCATE('@', plan.field_user_chargebee_plan_value) > 0 THEN 'Unassigned'
+         ELSE plan.field_user_chargebee_plan_value
+       END AS plan_label,
+       ed.field_member_end_date_value AS occurred_at
+FROM users_field_data u
+INNER JOIN profile p ON p.uid = u.uid AND p.type = 'main'
+INNER JOIN profile__field_member_end_date ed ON ed.entity_id = p.profile_id AND ed.deleted = 0
+LEFT JOIN user__field_user_chargebee_plan plan ON plan.entity_id = u.uid AND plan.deleted = 0
+WHERE ed.field_member_end_date_value BETWEEN :start AND :end
 SQL,
     ],
     'sql_event_type_metrics' => [

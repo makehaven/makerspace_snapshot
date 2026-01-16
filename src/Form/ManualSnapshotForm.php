@@ -38,6 +38,7 @@ class ManualSnapshotForm extends SnapshotAdminBaseForm {
       '#title' => $this->t('Snapshot Type'),
       '#options' => $snapshot_type_options,
       '#default_value' => 'monthly',
+      '#description' => $this->t('Monthly snapshots are always recorded as the 1st of the current month, even if run mid-month. This standardizes reporting periods.'),
     ];
 
     $form['snapshot_definitions'] = [
