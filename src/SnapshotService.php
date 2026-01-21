@@ -218,7 +218,7 @@ FROM users_field_data u
 INNER JOIN profile p ON p.uid = u.uid AND p.type = 'main'
 INNER JOIN profile__field_member_end_date ed ON ed.entity_id = p.profile_id AND ed.deleted = 0
 LEFT JOIN user__field_user_chargebee_plan plan ON plan.entity_id = u.uid AND plan.deleted = 0
-WHERE ed.field_member_end_date_value BETWEEN :start AND :end
+WHERE ed.field_member_end_date_value BETWEEN DATE_FORMAT(:start, '%Y-%m-%d') AND DATE_FORMAT(:end, '%Y-%m-%d')
 SQL,
     ],
     'sql_event_type_metrics' => [
