@@ -134,7 +134,8 @@ class SnapshotImportForm extends SnapshotAdminBaseForm {
     if (!empty($all_dates)) {
       $query = $this->database->select('ms_snapshot', 's')
         ->fields('s', ['id', 'definition', 'snapshot_date'])
-        ->condition('snapshot_date', $all_dates, 'IN');
+        ->condition('snapshot_date', $all_dates, 'IN')
+        ->condition('source', 'manual_import');
       $existing = $query->execute()->fetchAll();
       $existing_map = [];
       foreach ($existing as $row) {
@@ -532,6 +533,7 @@ class SnapshotImportForm extends SnapshotAdminBaseForm {
             'period_month' => (int) ($row['period_month'] ?? 0),
             'event_type_id' => ($row['event_type_id'] ?? '') === '' ? NULL : (int) $row['event_type_id'],
             'event_type_label' => (string) ($row['event_type_label'] ?? 'Unknown'),
+            'events_count' => (int) ($row['events_count'] ?? 0),
             'participant_count' => (int) ($row['participant_count'] ?? 0),
             'total_amount' => round((float) ($row['total_amount'] ?? 0), 2),
             'average_ticket' => round((float) ($row['average_ticket'] ?? 0), 2),

@@ -2261,10 +2261,54 @@ SQL,
     return $label === '' ? '' : ucwords($label);
   }
 
+  /**
+   * Imports a single snapshot from pre-processed payload data.
+   *
+   * @param string $definition
+   *   The snapshot definition key (e.g. 'membership_totals').
+   * @param string $schedule
+   *   Snapshot cadence (monthly, quarterly, annually, daily, specific).
+   * @param string $snapshot_date
+   *   Date string in Y-m-d format (normalized to first of month).
+   * @param array $payload
+   *   Data payload keyed by the definition's expected structure.
+   *
+   * @return int
+   *   The snapshot ID.
+   *
+   * @throws \InvalidArgumentException
+   *   If inputs fail validation.
+   * @throws \Exception
+   *   If the snapshot row cannot be created.
+   */
   public function importSnapshot($definition, $schedule, $snapshot_date, array $payload) {
+    // Validate snapshot_date format.
+    if (!is_string($snapshot_date) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $snapshot_date)) {
+      throw new \InvalidArgumentException("Invalid snapshot_date format: expected Y-m-d, got '{$snapshot_date}'");
+    }
+    try {
+      $parsed = new \DateTimeImmutable($snapshot_date);
+      // Reject nonsensical dates like 2026-02-30 that DateTimeImmutable silently adjusts.
+      if ($parsed->format('Y-m-d') !== $snapshot_date) {
+        throw new \InvalidArgumentException("Invalid snapshot_date: '{$snapshot_date}' was interpreted as '{$parsed->format('Y-m-d')}'");
+      }
+    }
+    catch (\Exception $e) {
+      if ($e instanceof \InvalidArgumentException) {
+        throw $e;
+      }
+      throw new \InvalidArgumentException("Cannot parse snapshot_date '{$snapshot_date}': {$e->getMessage()}");
+    }
+
+    // Validate schedule.
+    $valid_schedules = ['monthly', 'quarterly', 'annually', 'daily', 'specific'];
+    if (!in_array($schedule, $valid_schedules, TRUE)) {
+      throw new \InvalidArgumentException("Invalid schedule '{$schedule}'. Must be one of: " . implode(', ', $valid_schedules));
+    }
+
     $definitions = $this->buildDefinitions();
     if (!isset($definitions[$definition])) {
-      throw new \Exception("Invalid snapshot definition: {$definition}");
+      throw new \InvalidArgumentException("Invalid snapshot definition: {$definition}");
     }
 
     $snapshot_id = $payload['snapshot_id'] ?? NULL;
@@ -2280,10 +2324,9 @@ SQL,
         ])->execute();
     }
     else {
+      // Only refresh the timestamp; preserve existing date/type metadata.
       $this->database->update('ms_snapshot')
         ->fields([
-          'snapshot_type' => $schedule,
-          'snapshot_date' => $snapshot_date,
           'source' => 'manual_import',
           'created_at' => time(),
         ])
@@ -2331,6 +2374,9 @@ SQL,
   }
 
   protected function importMembershipSnapshot($snapshot_id, array $payload) {
+    if (empty($payload['totals']) || !is_array($payload['totals'])) {
+      return;
+    }
     $members_active = (int) ($payload['totals']['members_active'] ?? 0);
     $members_paused = (int) ($payload['totals']['members_paused'] ?? 0);
     $members_lapsed = (int) ($payload['totals']['members_lapsed'] ?? 0);
@@ -2399,6 +2445,9 @@ SQL,
   }
 
   protected function importMembershipTypesSnapshot($snapshot_id, array $payload) {
+    if (empty($payload['types']) || !is_array($payload['types'])) {
+      return;
+    }
     $types = $payload['types']['counts'] ?? [];
     $members_total = (int) ($payload['types']['members_total'] ?? array_sum($types));
 
@@ -2493,11 +2542,16 @@ SQL,
   }
 
   protected function importEventSnapshot($snapshot_id, array $payload) {
+    $events = $payload['events'] ?? [];
+    if (empty($events) || !is_array($events)) {
+      return;
+    }
+
     $this->database->delete('ms_fact_event_snapshot')
       ->condition('snapshot_id', (int) $snapshot_id)
       ->execute();
 
-    foreach ($payload['events'] as $event) {
+    foreach ($events as $event) {
       $this->database->insert('ms_fact_event_snapshot')
         ->fields([
           'snapshot_id'        => (int) $snapshot_id,
@@ -2514,23 +2568,52 @@ SQL,
       return;
     }
 
-    $this->database->delete('ms_fact_event_type_snapshot')
-      ->condition('snapshot_id', $snapshot_id)
-      ->execute();
-
+    // Deduplicate by event_type_label since PK is (snapshot_id, event_type_label).
+    // Merge rows with the same label by summing additive metrics.
+    $merged = [];
     foreach ($payload['event_types'] as $row) {
-      $this->database->insert('ms_fact_event_type_snapshot')
-        ->fields([
-          'snapshot_id' => $snapshot_id,
+      $label = (string) ($row['event_type_label'] ?? 'Unknown');
+      if (!isset($merged[$label])) {
+        $merged[$label] = [
           'period_year' => (int) ($row['period_year'] ?? 0),
           'period_quarter' => (int) ($row['period_quarter'] ?? 0),
           'period_month' => (int) ($row['period_month'] ?? 0),
           'event_type_id' => isset($row['event_type_id']) && $row['event_type_id'] !== '' ? (int) $row['event_type_id'] : NULL,
-          'event_type_label' => (string) ($row['event_type_label'] ?? 'Unknown'),
+          'event_type_label' => $label,
           'events_count' => (int) ($row['events_count'] ?? 0),
           'participant_count' => (int) ($row['participant_count'] ?? 0),
           'total_amount' => round((float) ($row['total_amount'] ?? 0), 2),
           'average_ticket' => round((float) ($row['average_ticket'] ?? 0), 2),
+        ];
+      }
+      else {
+        $merged[$label]['events_count'] += (int) ($row['events_count'] ?? 0);
+        $merged[$label]['participant_count'] += (int) ($row['participant_count'] ?? 0);
+        $merged[$label]['total_amount'] = round($merged[$label]['total_amount'] + (float) ($row['total_amount'] ?? 0), 2);
+        // Recompute average_ticket from merged totals.
+        $merged[$label]['average_ticket'] = $merged[$label]['participant_count'] > 0
+          ? round($merged[$label]['total_amount'] / $merged[$label]['participant_count'], 2)
+          : 0;
+      }
+    }
+
+    $this->database->delete('ms_fact_event_type_snapshot')
+      ->condition('snapshot_id', $snapshot_id)
+      ->execute();
+
+    foreach ($merged as $row) {
+      $this->database->insert('ms_fact_event_type_snapshot')
+        ->fields([
+          'snapshot_id' => $snapshot_id,
+          'period_year' => $row['period_year'],
+          'period_quarter' => $row['period_quarter'],
+          'period_month' => $row['period_month'],
+          'event_type_id' => $row['event_type_id'],
+          'event_type_label' => $row['event_type_label'],
+          'events_count' => $row['events_count'],
+          'participant_count' => $row['participant_count'],
+          'total_amount' => $row['total_amount'],
+          'average_ticket' => $row['average_ticket'],
         ])
         ->execute();
     }
@@ -2674,6 +2757,14 @@ SQL,
       ->condition('snapshot_id', $snapshot_ids, 'IN')
       ->execute();
     $this->database->delete('ms_fact_membership_type_snapshot')
+      ->condition('snapshot_id', $snapshot_ids, 'IN')
+      ->execute();
+
+    $this->database->delete('ms_fact_membership_activity')
+      ->condition('snapshot_id', $snapshot_ids, 'IN')
+      ->execute();
+
+    $this->database->delete('ms_fact_tool_uptime_snapshot')
       ->condition('snapshot_id', $snapshot_ids, 'IN')
       ->execute();
 
@@ -2947,12 +3038,12 @@ SQL,
 
     $baseQuery = $this->database->select('civicrm_contribution', 'c');
     $baseQuery->addExpression('COUNT(DISTINCT c.id)', 'contribution_count');
-    $baseQuery->addExpression('COUNT(DISTINCT IF(c.contribution_recur_id IS NOT NULL AND c.contribution_recur_id <> 0, c.id, NULL))', 'recurring_contribution_count');
+    $baseQuery->addExpression('COUNT(DISTINCT CASE WHEN c.contribution_recur_id IS NOT NULL AND c.contribution_recur_id <> 0 THEN c.id END)', 'recurring_contribution_count');
     $baseQuery->addExpression('COUNT(DISTINCT c.contact_id)', 'donor_count');
-    $baseQuery->addExpression('COUNT(DISTINCT IF(c.contribution_recur_id IS NOT NULL AND c.contribution_recur_id <> 0, c.contact_id, NULL))', 'recurring_donor_count');
-    $baseQuery->addExpression('COUNT(DISTINCT IF(c.contribution_recur_id IS NULL OR c.contribution_recur_id = 0, c.contact_id, NULL))', 'onetime_donor_count');
+    $baseQuery->addExpression('COUNT(DISTINCT CASE WHEN c.contribution_recur_id IS NOT NULL AND c.contribution_recur_id <> 0 THEN c.contact_id END)', 'recurring_donor_count');
+    $baseQuery->addExpression('COUNT(DISTINCT CASE WHEN c.contribution_recur_id IS NULL OR c.contribution_recur_id = 0 THEN c.contact_id END)', 'onetime_donor_count');
     $baseQuery->addExpression('SUM(COALESCE(c.total_amount, 0))', 'total_amount');
-    $baseQuery->addExpression('SUM(IF(c.contribution_recur_id IS NOT NULL AND c.contribution_recur_id <> 0, COALESCE(c.total_amount, 0), 0))', 'recurring_amount');
+    $baseQuery->addExpression('SUM(CASE WHEN c.contribution_recur_id IS NOT NULL AND c.contribution_recur_id <> 0 THEN COALESCE(c.total_amount, 0) ELSE 0 END)', 'recurring_amount');
     $baseQuery->condition('c.receive_date', [$start, $end], 'BETWEEN');
     $this->applyContributionFilters($baseQuery, 'c');
 

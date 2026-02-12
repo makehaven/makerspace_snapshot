@@ -69,3 +69,44 @@ makerspace_snapshot.event_types:
           label:
             type: string
             label: 'Event type label'
+
+makerspace_snapshot.donation_ranges:
+  type: config_object
+  label: 'Makerspace Snapshot Donation Ranges'
+  mapping:
+    ranges:
+      type: sequence
+      label: 'Donation range definitions'
+      sequence:
+        type: mapping
+        mapping:
+          id:
+            type: string
+            label: 'Range machine name'
+          label:
+            type: string
+            label: 'Range label'
+          min:
+            type: float
+            label: 'Minimum amount'
+          max:
+            type: float
+            label: 'Maximum amount'
+            nullable: true
+
+makerspace_snapshot.membership_types:
+  type: config_object
+  label: 'Makerspace Snapshot Membership Types'
+  mapping:
+    columns:
+      type: sequence
+      label: 'Membership type columns'
+      sequence:
+        type: mapping
+        mapping:
+          tid:
+            type: integer
+            label: 'Taxonomy term ID'
+          label:
+            type: string
+            label: 'Term label'

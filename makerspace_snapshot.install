@@ -24,6 +24,9 @@ function makerspace_snapshot_schema() {
       'created_at' => ['type' => 'int', 'not null' => FALSE],
     ],
     'primary key' => ['id'],
+    'unique keys' => [
+      'def_date_source' => ['definition', 'snapshot_date', 'source'],
+    ],
     'indexes' => [
       'type_date' => ['snapshot_type', 'snapshot_date'],
       'definition' => ['definition'],
@@ -702,5 +705,30 @@ function makerspace_snapshot_update_10016() {
   $config = \Drupal::configFactory()->getEditable('makerspace_snapshot.donation_ranges');
   if ($config->isNew()) {
     $config->set('ranges', makerspace_snapshot_default_donation_ranges())->save();
+  }
+}
+
+/**
+ * Add unique constraint on (definition, snapshot_date, source).
+ *
+ * Prevents duplicate snapshots at the database level. Existing duplicates
+ * must be cleaned up first via `drush makerspace-snapshot:dedupe --apply`.
+ */
+function makerspace_snapshot_update_10017() {
+  $connection = \Drupal::database();
+  $schema = $connection->schema();
+
+  if (!$schema->tableExists('ms_snapshot')) {
+    return;
+  }
+
+  try {
+    $schema->addUniqueKey('ms_snapshot', 'def_date_source', ['definition', 'snapshot_date', 'source']);
+  }
+  catch (\Exception $e) {
+    \Drupal::logger('makerspace_snapshot')->warning(
+      'Could not add unique key def_date_source: @message. Run "drush makerspace-snapshot:dedupe --apply" to remove duplicates first, then re-run updates.',
+      ['@message' => $e->getMessage()]
+    );
   }
 }

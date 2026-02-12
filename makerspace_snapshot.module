@@ -50,9 +50,12 @@ function makerspace_snapshot_cron() {
     // the first of the month are stored as that month (for example 2026-02-01).
     $snapshot_date = $now->format('Y-m-d');
     // Period-based metrics should use the completed period prior to the run.
+    // Derive from the snapshot date (always first of month) so delayed cron
+    // still captures the correct full prior period.
     $period_reference_date = $snapshot_date;
     if (in_array($snapshot_type, ['monthly', 'quarterly', 'annually'], TRUE)) {
-      $period_reference_date = (new DrupalDateTime('yesterday'))->format('Y-m-d');
+      $first_of_month = (new DrupalDateTime($snapshot_date))->modify('first day of this month');
+      $period_reference_date = $first_of_month->modify('-1 day')->format('Y-m-d');
     }
     /** @var \Drupal\makerspace_snapshot\SnapshotService $snapshotService */
     $snapshotService = \Drupal::service('makerspace_snapshot.snapshot_service');
