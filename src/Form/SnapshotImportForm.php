@@ -81,7 +81,9 @@ class SnapshotImportForm extends SnapshotAdminBaseForm {
       $form['datasets'][$definition][$field_name] = [
         '#type' => 'managed_file',
         '#title' => $this->t('@label CSV', ['@label' => $label]),
-        '#upload_validators' => ['file_validate_extensions' => ['csv']],
+        '#upload_validators' => [
+          'FileExtension' => ['extensions' => 'csv'],
+        ],
         '#description' => $template_link . '<br/>' . $this->t('Expected headers: @headers', ['@headers' => $expected_headers]),
       ];
     }
