@@ -620,6 +620,27 @@ SQL,
   }
 
   /**
+   * Checks whether a snapshot already exists for cadence/date/source.
+   *
+   * Snapshot dates are normalized to the first day of the month to match
+   * storage semantics in ms_snapshot.
+   */
+  public function snapshotExists(string $snapshot_type, string $snapshot_date, string $source = 'automatic_cron'): bool {
+    $normalizedDate = (new \DateTimeImmutable($snapshot_date))->format('Y-m-01');
+
+    $existingId = $this->database->select('ms_snapshot', 's')
+      ->fields('s', ['id'])
+      ->condition('snapshot_type', $snapshot_type)
+      ->condition('snapshot_date', $normalizedDate)
+      ->condition('source', $source)
+      ->range(0, 1)
+      ->execute()
+      ->fetchField();
+
+    return !empty($existingId);
+  }
+
+  /**
    * Takes a snapshot.
    *
    * @param string $snapshot_type
@@ -632,15 +653,20 @@ SQL,
    *   The origin of the snapshot (manual_form, manual_import, manual_drush, automatic_cron, system).
    * @param string[]|null $definitions
    *   Optional list of definitions to update. Defaults to all supported definitions.
+   * @param string|null $period_reference_date
+   *   Optional date used only for period-based calculations (Y-m-d format).
+   *   When omitted, defaults to $snapshot_date.
    */
-  public function takeSnapshot($snapshot_type, $is_test = FALSE, $snapshot_date = NULL, string $source = 'system', ?array $definitions = NULL) {
+  public function takeSnapshot($snapshot_type, $is_test = FALSE, $snapshot_date = NULL, string $source = 'system', ?array $definitions = NULL, ?string $period_reference_date = NULL) {
     try {
       $isTest = (bool) $is_test;
 
-      $snapshotDate = $snapshot_date ?? (new \DateTime())->format('Y-m-d');
-      $snapshotDate = (new \DateTimeImmutable($snapshotDate))->format('Y-m-01');
+      $snapshotDateInput = $snapshot_date ?? (new \DateTime())->format('Y-m-d');
+      $snapshotDate = (new \DateTimeImmutable($snapshotDateInput))->format('Y-m-01');
+      $periodReferenceInput = $period_reference_date ?? $snapshotDateInput;
+      $periodReferenceDate = new \DateTimeImmutable($periodReferenceInput);
 
-      $periodBounds = $this->resolvePeriodBounds(new \DateTimeImmutable($snapshotDate), $snapshot_type);
+      $periodBounds = $this->resolvePeriodBounds($periodReferenceDate, $snapshot_type);
       $periodStartObject = $periodBounds['start'];
       $periodEndObject = $periodBounds['end'];
       $periodStart = $periodStartObject->format('Y-m-d H:i:s');

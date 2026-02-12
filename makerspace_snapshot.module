@@ -46,8 +46,28 @@ function makerspace_snapshot_cron() {
   }
 
   if ($should_run) {
-    $snapshot_date = (new DrupalDateTime('yesterday'))->format('Y-m-d');
-    \Drupal::service('makerspace_snapshot.snapshot_service')->takeSnapshot($snapshot_type, FALSE, $snapshot_date, 'automatic_cron');
+    // Use the run date as the snapshot anchor so monthly snapshots taken on
+    // the first of the month are stored as that month (for example 2026-02-01).
+    $snapshot_date = $now->format('Y-m-d');
+    // Period-based metrics should use the completed period prior to the run.
+    $period_reference_date = $snapshot_date;
+    if (in_array($snapshot_type, ['monthly', 'quarterly', 'annually'], TRUE)) {
+      $period_reference_date = (new DrupalDateTime('yesterday'))->format('Y-m-d');
+    }
+    /** @var \Drupal\makerspace_snapshot\SnapshotService $snapshotService */
+    $snapshotService = \Drupal::service('makerspace_snapshot.snapshot_service');
+    if ($snapshotService->snapshotExists($snapshot_type, $snapshot_date, 'automatic_cron')) {
+      \Drupal::logger('makerspace_snapshot')->notice(
+        'Skipped duplicate automatic @type snapshot for @date.',
+        [
+          '@type' => $snapshot_type,
+          '@date' => (new DrupalDateTime($snapshot_date))->format('Y-m-01'),
+        ]
+      );
+      return;
+    }
+
+    $snapshotService->takeSnapshot($snapshot_type, FALSE, $snapshot_date, 'automatic_cron', NULL, $period_reference_date);
   }
 }
 
