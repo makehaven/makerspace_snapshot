@@ -764,15 +764,7 @@ SQL,
       // Create snapshot metadata rows per definition.
       $snapshotIds = [];
       foreach ($selectedDefinitions as $definition) {
-        $snapshot_id = $this->database->insert('ms_snapshot')
-          ->fields([
-            'definition'    => $definition,
-            'snapshot_type' => $snapshot_type,
-            'snapshot_date' => $snapshotDate,
-            'source'        => $source,
-            'created_at'    => time(),
-          ])->execute();
-
+        $snapshot_id = $this->getOrCreateSnapshotId($definition, (string) $snapshot_type, $snapshotDate, $source);
         if (!$snapshot_id) {
           $this->logger->error("Failed to create {$definition} snapshot for {$snapshotDate}");
           continue;
@@ -972,6 +964,70 @@ SQL,
       $this->pruneSnapshots();
     } catch (\Exception $e) {
       $this->logger->error('Error taking snapshot: @message', ['@message' => $e->getMessage()]);
+    }
+  }
+
+  /**
+   * Finds or creates a snapshot row and clears stale fact rows when reusing.
+   */
+  protected function getOrCreateSnapshotId(string $definition, string $snapshotType, string $snapshotDate, string $source): ?int {
+    $existingId = $this->database->select('ms_snapshot', 's')
+      ->fields('s', ['id'])
+      ->condition('definition', $definition)
+      ->condition('snapshot_date', $snapshotDate)
+      ->condition('source', $source)
+      ->range(0, 1)
+      ->execute()
+      ->fetchField();
+
+    if ($existingId) {
+      $snapshotId = (int) $existingId;
+      $this->database->update('ms_snapshot')
+        ->fields([
+          'snapshot_type' => $snapshotType,
+          'created_at' => time(),
+        ])
+        ->condition('id', $snapshotId)
+        ->execute();
+      $this->clearFactRowsForSnapshot($snapshotId);
+      return $snapshotId;
+    }
+
+    $createdId = $this->database->insert('ms_snapshot')
+      ->fields([
+        'definition' => $definition,
+        'snapshot_type' => $snapshotType,
+        'snapshot_date' => $snapshotDate,
+        'source' => $source,
+        'created_at' => time(),
+      ])
+      ->execute();
+
+    return $createdId ? (int) $createdId : NULL;
+  }
+
+  /**
+   * Clears all fact table rows tied to a snapshot row ID.
+   */
+  protected function clearFactRowsForSnapshot(int $snapshotId): void {
+    foreach ([
+      'ms_fact_org_snapshot',
+      'ms_fact_plan_snapshot',
+      'ms_fact_donation_snapshot',
+      'ms_fact_donation_range_snapshot',
+      'ms_fact_event_type_snapshot',
+      'ms_fact_survey_snapshot',
+      'ms_fact_event_snapshot',
+      'ms_fact_kpi_snapshot',
+      'ms_fact_membership_type_snapshot',
+      'ms_fact_membership_activity',
+      'ms_fact_tool_uptime_snapshot',
+    ] as $table) {
+      if ($this->database->schema()->tableExists($table)) {
+        $this->database->delete($table)
+          ->condition('snapshot_id', $snapshotId)
+          ->execute();
+      }
     }
   }
 
@@ -3282,21 +3338,70 @@ SQL,
     }
 
     $metrics = [];
-    foreach ($results as $result) {
-      if (!is_array($result)) {
-        continue;
-      }
-      foreach ($result as $kpiId => $info) {
+    $consume = function (array $candidate) use (&$metrics): void {
+      foreach ($candidate as $kpiId => $info) {
         if (!is_string($kpiId) || $kpiId === '') {
           continue;
         }
-        $metrics[$kpiId] = $this->normalizeKpiMetric($info);
+        $normalized = $this->normalizeKpiMetric($info);
+        if ($normalized !== NULL && isset($normalized['value'])) {
+          $metrics[$kpiId] = $normalized;
+        }
+      }
+    };
+
+    // Drupal's invokeAll() may return a merged KPI map directly.
+    if ($this->isLikelyKpiMetricMap($results)) {
+      $consume($results);
+    }
+    else {
+      // Defensive fallback for nested result arrays.
+      foreach ($results as $result) {
+        if (!is_array($result) || !$this->isLikelyKpiMetricMap($result)) {
+          continue;
+        }
+        $consume($result);
       }
     }
 
     return array_filter($metrics, static function ($row) {
       return $row !== NULL && isset($row['value']);
     });
+  }
+
+  /**
+   * Determines whether a candidate array looks like a KPI metric map.
+   *
+   * Expected shape:
+   *   ['kpi_id' => scalar|['value' => ..., ...], ...]
+   */
+  protected function isLikelyKpiMetricMap(array $candidate): bool {
+    if (empty($candidate)) {
+      return FALSE;
+    }
+
+    // Reject a single KPI payload row accidentally treated as a map.
+    if (array_key_exists('value', $candidate)) {
+      return FALSE;
+    }
+
+    $checked = 0;
+    foreach ($candidate as $key => $value) {
+      if (!is_string($key) || $key === '') {
+        return FALSE;
+      }
+
+      if (!preg_match('/^[a-z0-9_]+$/', $key)) {
+        return FALSE;
+      }
+
+      if (!is_scalar($value) && !(is_array($value) && array_key_exists('value', $value))) {
+        return FALSE;
+      }
+      $checked++;
+    }
+
+    return $checked > 0;
   }
 
   /**
@@ -3362,6 +3467,9 @@ SQL,
     $row = [
       'value' => $info['value'],
     ];
+    if (!is_scalar($row['value'])) {
+      return NULL;
+    }
     if (isset($info['period_year'])) {
       $row['period_year'] = (int) $info['period_year'];
     }
