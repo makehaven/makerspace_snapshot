@@ -3380,14 +3380,16 @@ SQL,
       return FALSE;
     }
 
-    // Reject a single KPI payload row accidentally treated as a map.
+    // A KPI row has a "value" key. A map has KPI IDs as keys.
     if (array_key_exists('value', $candidate)) {
       return FALSE;
     }
 
     $checked = 0;
     foreach ($candidate as $key => $value) {
-      if (!is_string($key) || $key === '') {
+      // KPI IDs must be strings. If we see numeric keys, this is likely 
+      // Drupal invokeAll() results array containing multiple map returns.
+      if (!is_string($key)) {
         return FALSE;
       }
 
