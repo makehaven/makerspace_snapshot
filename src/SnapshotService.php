@@ -2834,6 +2834,13 @@ SQL,
     $normalized = strtolower($snapshotType);
     $start = $snapshotDate->setTime(0, 0, 0);
     switch ($normalized) {
+      case 'monthly':
+        $year = (int) $start->format('Y');
+        $month = (int) $start->format('n');
+        $start = $start->setDate($year, $month, 1);
+        $end = $start->modify('last day of this month')->setTime(23, 59, 59);
+        break;
+
       case 'quarterly':
         $year = (int) $start->format('Y');
         $month = (int) $start->format('n');
