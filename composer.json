@@ -1,0 +1,6 @@
+{
+  "name": "makehaven/makerspace_snapshot",
+  "type": "drupal-custom-module",
+  "description": "Periodic immutable snapshots of membership metrics using existing plan categories.",
+  "license": "GPL-2.0-or-later"
+}
