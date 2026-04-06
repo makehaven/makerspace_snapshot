@@ -177,8 +177,10 @@ SQL,
     ],
     'sql_joins' => [
       'label' => 'Joins in period',
-      'description' => 'Finds members who joined during the reporting window. Requires :start and :end parameters.',
+      'description' => 'Finds members who joined or reactivated during the reporting window. Initial joins use field_member_join_date when populated, falling back to u.created. Reactivations use field_member_reactivation_date. Requires :start and :end parameters.',
       'sql' => <<<SQL
+-- Initial joins: use field_member_join_date when set; fall back to u.created for current
+-- members only (avoids counting event-only signups who never held the member role).
 SELECT u.uid AS member_id,
        CASE
          WHEN NULLIF(plan.field_user_chargebee_plan_value, '') IS NULL THEN 'UNASSIGNED'
@@ -190,12 +192,50 @@ SELECT u.uid AS member_id,
          WHEN LOCATE('@', plan.field_user_chargebee_plan_value) > 0 THEN 'Unassigned'
          ELSE plan.field_user_chargebee_plan_value
        END AS plan_label,
-       FROM_UNIXTIME(u.created, '%Y-%m-%d') AS occurred_at
+       CASE
+         WHEN NULLIF(jd.field_member_join_date_value, '') IS NOT NULL
+           THEN jd.field_member_join_date_value
+         ELSE FROM_UNIXTIME(u.created, '%Y-%m-%d')
+       END AS occurred_at
 FROM users_field_data u
-INNER JOIN user__roles r ON u.uid = r.entity_id
+INNER JOIN profile p ON p.uid = u.uid AND p.type = 'main'
+LEFT JOIN profile__field_member_join_date jd ON jd.entity_id = p.profile_id AND jd.deleted = 0
 LEFT JOIN user__field_user_chargebee_plan plan ON plan.entity_id = u.uid AND plan.deleted = 0
-WHERE r.roles_target_id = 'member'
-  AND u.created BETWEEN UNIX_TIMESTAMP(:start) AND UNIX_TIMESTAMP(:end)
+WHERE (
+  -- Explicit join date recorded: always trust it
+  (NULLIF(jd.field_member_join_date_value, '') IS NOT NULL
+   AND jd.field_member_join_date_value BETWEEN DATE_FORMAT(:start, '%Y-%m-%d') AND DATE_FORMAT(:end, '%Y-%m-%d'))
+  OR
+  -- No explicit join date: use account creation date, but only for current members
+  -- so we don't count event-only signups
+  (NULLIF(jd.field_member_join_date_value, '') IS NULL
+   AND EXISTS (SELECT 1 FROM user__roles r WHERE r.entity_id = u.uid AND r.roles_target_id = 'member')
+   AND u.created BETWEEN UNIX_TIMESTAMP(:start) AND UNIX_TIMESTAMP(:end))
+)
+
+UNION
+
+-- Reactivations: members who rejoined after previously cancelling.
+-- These were never counted by the original query (which only used u.created)
+-- but they do appear in cancels, causing the net_change math to diverge.
+SELECT u.uid AS member_id,
+       CASE
+         WHEN NULLIF(plan.field_user_chargebee_plan_value, '') IS NULL THEN 'UNASSIGNED'
+         WHEN LOCATE('@', plan.field_user_chargebee_plan_value) > 0 THEN 'UNASSIGNED'
+         ELSE plan.field_user_chargebee_plan_value
+       END AS plan_code,
+       CASE
+         WHEN NULLIF(plan.field_user_chargebee_plan_value, '') IS NULL THEN 'Unassigned'
+         WHEN LOCATE('@', plan.field_user_chargebee_plan_value) > 0 THEN 'Unassigned'
+         ELSE plan.field_user_chargebee_plan_value
+       END AS plan_label,
+       rd.field_member_reactivation_date_value AS occurred_at
+FROM users_field_data u
+INNER JOIN profile p ON p.uid = u.uid AND p.type = 'main'
+INNER JOIN profile__field_member_reactivation_date rd ON rd.entity_id = p.profile_id AND rd.deleted = 0
+LEFT JOIN user__field_user_chargebee_plan plan ON plan.entity_id = u.uid AND plan.deleted = 0
+WHERE rd.field_member_reactivation_date_value
+      BETWEEN DATE_FORMAT(:start, '%Y-%m-%d') AND DATE_FORMAT(:end, '%Y-%m-%d')
 SQL,
     ],
     'sql_cancels' => [
