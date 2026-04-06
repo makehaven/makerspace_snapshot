@@ -179,8 +179,6 @@ SQL,
       'label' => 'Joins in period',
       'description' => 'Finds members who joined or reactivated during the reporting window. Initial joins use field_member_join_date when populated, falling back to u.created. Reactivations use field_member_reactivation_date. Requires :start and :end parameters.',
       'sql' => <<<SQL
--- Initial joins: use field_member_join_date when set; fall back to u.created for current
--- members only (avoids counting event-only signups who never held the member role).
 SELECT u.uid AS member_id,
        CASE
          WHEN NULLIF(plan.field_user_chargebee_plan_value, '') IS NULL THEN 'UNASSIGNED'
@@ -215,9 +213,6 @@ WHERE (
 
 UNION
 
--- Reactivations: members who rejoined after previously cancelling.
--- These were never counted by the original query (which only used u.created)
--- but they do appear in cancels, causing the net_change math to diverge.
 SELECT u.uid AS member_id,
        CASE
          WHEN NULLIF(plan.field_user_chargebee_plan_value, '') IS NULL THEN 'UNASSIGNED'
