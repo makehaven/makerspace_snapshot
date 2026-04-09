@@ -1850,11 +1850,15 @@ SQL,
         ->condition('p.status', 1)
         ->condition('p.uid', $member_ids, 'IN');
       $query->join('profile__field_membership_type', 'mt', 'mt.entity_id = p.profile_id');
+      $query->fields('p', ['uid']);
       $query->fields('mt', ['field_membership_type_target_id']);
       $result = $query->execute();
 
+      $typedUids = [];
       foreach ($result as $record) {
+        $uid = (int) $record->uid;
         $tid = (int) $record->field_membership_type_target_id;
+        $typedUids[$uid] = TRUE;
         if (!isset($counts[$tid])) {
           $counts[$tid] = 0;
           try {
@@ -1877,6 +1881,18 @@ SQL,
           }
         }
         $counts[$tid]++;
+      }
+
+      // Bucket members with no membership type into term ID 0 ("Unassigned")
+      // so the per-type sum always equals members_total.
+      $untypedCount = count(array_diff($member_ids, array_keys($typedUids)));
+      if ($untypedCount > 0) {
+        $unassignedTid = 0;
+        $counts[$unassignedTid] = ($counts[$unassignedTid] ?? 0) + $untypedCount;
+        if (!isset($terms[$unassignedTid])) {
+          $terms[$unassignedTid] = ['label' => 'Unassigned'];
+          $configUpdated = TRUE;
+        }
       }
     }
     catch (\Exception $e) {
