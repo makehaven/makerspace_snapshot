@@ -419,27 +419,6 @@ class SnapshotImportForm extends SnapshotAdminBaseForm {
         }
         break;
 
-      case 'event_registrations':
-        $date_tracker = [];
-        foreach ($rows as $row) {
-          $normalized_date = $this->normalizeSnapshotDate($row['snapshot_date'], $field_name, $form_state);
-          if ($normalized_date === NULL) {
-            continue;
-          }
-          $date_tracker[$normalized_date] = TRUE;
-          $import_data[$normalized_date]['event_registrations']['events'][] = [
-            'event_id' => (int) ($row['event_id'] ?? 0),
-            'event_title' => (string) ($row['event_title'] ?? ''),
-            'event_start_date' => (string) ($row['event_start_date'] ?? ''),
-            'registration_count' => (int) ($row['registration_count'] ?? 0),
-          ];
-          $all_dates[] = $normalized_date;
-        }
-        if (count($date_tracker) > 1) {
-          $form_state->setErrorByName($field_name, $this->t('The event registrations CSV can only contain data for a single date.'));
-        }
-        break;
-
       case 'membership_types':
       case 'membership_type_joins':
       case 'membership_type_cancels':
@@ -521,27 +500,6 @@ class SnapshotImportForm extends SnapshotAdminBaseForm {
         }
         break;
 
-      case 'event_type_metrics':
-        foreach ($rows as $row) {
-          $normalized_date = $this->normalizeSnapshotDate($row['snapshot_date'], $field_name, $form_state);
-          if ($normalized_date === NULL) {
-            continue;
-          }
-          $import_data[$normalized_date]['event_type_metrics']['event_types'][] = [
-            'period_year' => (int) ($row['period_year'] ?? 0),
-            'period_quarter' => (int) ($row['period_quarter'] ?? 0),
-            'period_month' => (int) ($row['period_month'] ?? 0),
-            'event_type_id' => ($row['event_type_id'] ?? '') === '' ? NULL : (int) $row['event_type_id'],
-            'event_type_label' => (string) ($row['event_type_label'] ?? 'Unknown'),
-            'events_count' => (int) ($row['events_count'] ?? 0),
-            'participant_count' => (int) ($row['participant_count'] ?? 0),
-            'total_amount' => round((float) ($row['total_amount'] ?? 0), 2),
-            'average_ticket' => round((float) ($row['average_ticket'] ?? 0), 2),
-          ];
-          $all_dates[] = $normalized_date;
-        }
-        break;
-
       case 'survey_metrics':
         foreach ($rows as $row) {
           $normalized_date = $this->normalizeSnapshotDate($row['snapshot_date'], $field_name, $form_state);
@@ -561,27 +519,6 @@ class SnapshotImportForm extends SnapshotAdminBaseForm {
             'community_score' => round((float) ($row['community_score'] ?? 0), 2),
             'vibe_score' => round((float) ($row['vibe_score'] ?? 0), 2),
             'snapshot_date' => $normalized_date,
-          ];
-          $all_dates[] = $normalized_date;
-        }
-        break;
-
-      case 'tool_availability':
-        foreach ($rows as $row) {
-          $normalized_date = $this->normalizeSnapshotDate($row['snapshot_date'], $field_name, $form_state);
-          if ($normalized_date === NULL) {
-            continue;
-          }
-          $import_data[$normalized_date]['tool_availability']['metrics'] = [
-            'period_year' => (int) ($row['period_year'] ?? 0),
-            'period_month' => (int) ($row['period_month'] ?? 0),
-            'period_day' => (int) ($row['period_day'] ?? 0),
-            'total_tools' => (int) ($row['total_tools'] ?? 0),
-            'available_tools' => (int) ($row['available_tools'] ?? 0),
-            'down_tools' => (int) ($row['down_tools'] ?? 0),
-            'maintenance_tools' => (int) ($row['maintenance_tools'] ?? 0),
-            'unknown_tools' => (int) ($row['unknown_tools'] ?? 0),
-            'availability_percent' => round((float) ($row['availability_percent'] ?? 0), 2),
           ];
           $all_dates[] = $normalized_date;
         }

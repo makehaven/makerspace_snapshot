@@ -45,10 +45,6 @@ class SnapshotDownloadController extends ControllerBase {
     return $this->streamSnapshotDefinition((int) $snapshot_id, 'membership_type_cancels', 'membership_type_cancels.csv');
   }
 
-  public function downloadEventRegistrationsData($snapshot_id) {
-    return $this->streamSnapshotDefinition((int) $snapshot_id, 'event_registrations', 'event_registrations.csv');
-  }
-
   public function downloadDonationMetricsData($snapshot_id) {
     return $this->streamSnapshotDefinition((int) $snapshot_id, 'donation_metrics', 'donation_metrics.csv');
   }
@@ -57,28 +53,24 @@ class SnapshotDownloadController extends ControllerBase {
     return $this->streamSnapshotDefinition((int) $snapshot_id, 'donation_range_metrics', 'donation_range_metrics.csv');
   }
 
-  public function downloadEventTypeMetricsData($snapshot_id) {
-    return $this->streamSnapshotDefinition((int) $snapshot_id, 'event_type_metrics', 'event_type_metrics.csv');
-  }
-
-  public function downloadEventTypeCountsData($snapshot_id) {
-    return $this->streamSnapshotDefinition((int) $snapshot_id, 'event_type_counts', 'event_type_counts.csv');
-  }
-
-  public function downloadEventTypeRegistrationsData($snapshot_id) {
-    return $this->streamSnapshotDefinition((int) $snapshot_id, 'event_type_registrations', 'event_type_registrations.csv');
-  }
-
-  public function downloadEventTypeRevenueData($snapshot_id) {
-    return $this->streamSnapshotDefinition((int) $snapshot_id, 'event_type_revenue', 'event_type_revenue.csv');
-  }
-
   public function downloadSurveyMetricsData($snapshot_id) {
     return $this->streamSnapshotDefinition((int) $snapshot_id, 'survey_metrics', 'survey_metrics.csv');
   }
 
-  public function downloadToolAvailabilityData($snapshot_id) {
-    return $this->streamSnapshotDefinition((int) $snapshot_id, 'tool_availability', 'tool_availability.csv');
+  public function downloadRevenueTotalsData($snapshot_id) {
+    return $this->streamSnapshotDefinition((int) $snapshot_id, 'revenue_totals', 'revenue_totals.csv');
+  }
+
+  public function downloadStorageOccupancyData($snapshot_id) {
+    return $this->streamSnapshotDefinition((int) $snapshot_id, 'storage_occupancy', 'storage_occupancy.csv');
+  }
+
+  public function downloadMemberCertificationsData($snapshot_id) {
+    return $this->streamSnapshotDefinition((int) $snapshot_id, 'member_certifications', 'member_certifications.csv');
+  }
+
+  public function downloadActiveAccessGrantsData($snapshot_id) {
+    return $this->streamSnapshotDefinition((int) $snapshot_id, 'active_access_grants', 'active_access_grants.csv');
   }
 
   public function exportSnapshotPackage(string $snapshot_type, string $snapshot_date) {

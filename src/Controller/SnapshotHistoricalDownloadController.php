@@ -218,13 +218,6 @@ class SnapshotHistoricalDownloadController extends ControllerBase {
       'plan_levels' => [
         'snapshot_date',
       ],
-      'event_registrations' => [
-        'snapshot_date',
-        'event_id',
-        'event_title',
-        'event_start_date',
-        'registration_count',
-      ],
       'membership_types' => [
         'snapshot_date',
         'members_total',
@@ -266,27 +259,6 @@ class SnapshotHistoricalDownloadController extends ControllerBase {
         'contributions_count',
         'total_amount',
       ],
-      'event_type_metrics' => [
-        'snapshot_date',
-        'period_year',
-        'period_quarter',
-        'period_month',
-        'event_type_id',
-        'event_type_label',
-        'events_count',
-        'participant_count',
-        'total_amount',
-        'average_ticket',
-      ],
-      'event_type_counts' => [
-        'snapshot_date',
-      ],
-      'event_type_registrations' => [
-        'snapshot_date',
-      ],
-      'event_type_revenue' => [
-        'snapshot_date',
-      ],
       'survey_metrics' => [
         'snapshot_date',
         'respondents_count',
@@ -301,17 +273,39 @@ class SnapshotHistoricalDownloadController extends ControllerBase {
         'community_score',
         'vibe_score',
       ],
-      'tool_availability' => [
+      'revenue_totals' => [
         'snapshot_date',
-        'period_year',
-        'period_month',
-        'period_day',
-        'total_tools',
-        'available_tools',
-        'down_tools',
-        'maintenance_tools',
-        'unknown_tools',
-        'availability_percent',
+        'active_count',
+        'paused_count',
+        'active_mrr',
+        'paused_mrr',
+        'total_mrr',
+        'avg_monthly_active',
+      ],
+      'storage_occupancy' => [
+        'snapshot_date',
+        'units_total',
+        'units_occupied',
+        'units_vacant',
+        'occupancy_rate',
+        'billed_mrr',
+        'complimentary_mrr',
+        'total_mrr',
+        'potential_mrr',
+        'active_violations',
+        'violations_accrued',
+      ],
+      'member_certifications' => [
+        'snapshot_date',
+        'badge_tid',
+        'badge_name',
+        'active_count',
+        'pending_count',
+      ],
+      'active_access_grants' => [
+        'snapshot_date',
+        'door_badge_tid',
+        'active_grants',
       ],
     ];
   }

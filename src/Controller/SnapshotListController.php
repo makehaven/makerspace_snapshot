@@ -216,28 +216,22 @@ class SnapshotListController extends ControllerBase {
       case 'membership_type_cancels':
         return Url::fromRoute('makerspace_snapshot.download.membership_type_cancels', ['snapshot_id' => $snapshot_id]);
 
-      case 'event_registrations':
-        return Url::fromRoute('makerspace_snapshot.download.event_registrations', ['snapshot_id' => $snapshot_id]);
-
       case 'donation_metrics':
         return Url::fromRoute('makerspace_snapshot.download.donation_metrics', ['snapshot_id' => $snapshot_id]);
       case 'donation_range_metrics':
         return Url::fromRoute('makerspace_snapshot.download.donation_range_metrics', ['snapshot_id' => $snapshot_id]);
 
-      case 'event_type_metrics':
-        return Url::fromRoute('makerspace_snapshot.download.event_type_metrics', ['snapshot_id' => $snapshot_id]);
-      case 'event_type_counts':
-        return Url::fromRoute('makerspace_snapshot.download.event_type_counts', ['snapshot_id' => $snapshot_id]);
-      case 'event_type_registrations':
-        return Url::fromRoute('makerspace_snapshot.download.event_type_registrations', ['snapshot_id' => $snapshot_id]);
-      case 'event_type_revenue':
-        return Url::fromRoute('makerspace_snapshot.download.event_type_revenue', ['snapshot_id' => $snapshot_id]);
-
       case 'survey_metrics':
         return Url::fromRoute('makerspace_snapshot.download.survey_metrics', ['snapshot_id' => $snapshot_id]);
 
-      case 'tool_availability':
-        return Url::fromRoute('makerspace_snapshot.download.tool_availability', ['snapshot_id' => $snapshot_id]);
+      case 'revenue_totals':
+        return Url::fromRoute('makerspace_snapshot.download.revenue_totals', ['snapshot_id' => $snapshot_id]);
+      case 'storage_occupancy':
+        return Url::fromRoute('makerspace_snapshot.download.storage_occupancy', ['snapshot_id' => $snapshot_id]);
+      case 'member_certifications':
+        return Url::fromRoute('makerspace_snapshot.download.member_certifications', ['snapshot_id' => $snapshot_id]);
+      case 'active_access_grants':
+        return Url::fromRoute('makerspace_snapshot.download.active_access_grants', ['snapshot_id' => $snapshot_id]);
 
       default:
         return NULL;

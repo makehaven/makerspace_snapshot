@@ -64,13 +64,6 @@ class SnapshotService {
   protected ?array $planLevelDefinitions = NULL;
 
   /**
-   * Cached event type definitions keyed by event type ID.
-   *
-   * @var array|null
-   */
-  protected ?array $eventTypeDefinitions = NULL;
-
-  /**
    * Cached donation range definitions keyed by range ID.
    *
    * @var array|null
@@ -256,54 +249,6 @@ LEFT JOIN user__field_user_chargebee_plan plan ON plan.entity_id = u.uid AND pla
 WHERE ed.field_member_end_date_value BETWEEN DATE_FORMAT(:start, '%Y-%m-%d') AND DATE_FORMAT(:end, '%Y-%m-%d')
 SQL,
     ],
-    'sql_event_type_metrics' => [
-      'label' => 'Event type metrics',
-      'description' => 'Aggregates counted participants and revenue by event type for events whose start_date falls between :start and :end.',
-      'sql' => <<<SQL
-SELECT
-  CASE WHEN e.event_type_id IS NULL OR e.event_type_id = 0 THEN NULL ELSE e.event_type_id END AS event_type_id,
-  COALESCE(ov.label, CONCAT('Type ', e.event_type_id)) AS event_type_label,
-  COUNT(DISTINCT e.id) AS events_count,
-  COUNT(DISTINCT p.id) AS participant_count,
-  SUM(
-    CASE
-      WHEN c.id IS NULL THEN 0
-      WHEN COALESCE(c.is_test, 0) = 1 THEN 0
-      WHEN c.contribution_status_id IN (3, 7, 8, 9) THEN 0
-      ELSE COALESCE(c.total_amount, 0)
-    END
-  ) AS total_amount,
-  CASE
-    WHEN COUNT(DISTINCT p.id) = 0 THEN 0
-    ELSE ROUND(
-      SUM(
-        CASE
-          WHEN c.id IS NULL THEN 0
-          WHEN COALESCE(c.is_test, 0) = 1 THEN 0
-          WHEN c.contribution_status_id IN (3, 7, 8, 9) THEN 0
-          ELSE COALESCE(c.total_amount, 0)
-        END
-      ) / COUNT(DISTINCT p.id),
-      2
-    )
-  END AS average_ticket
-FROM civicrm_participant p
-INNER JOIN civicrm_event e ON e.id = p.event_id
-INNER JOIN civicrm_participant_status_type pst ON pst.id = p.status_id
-LEFT JOIN civicrm_participant_payment pp ON pp.participant_id = p.id
-LEFT JOIN civicrm_contribution c ON c.id = pp.contribution_id
-LEFT JOIN civicrm_option_value ov ON ov.value = e.event_type_id
-LEFT JOIN civicrm_option_group og ON og.id = ov.option_group_id
-WHERE pst.is_counted = 1
-  AND pst.is_cancelled = 0
-  AND COALESCE(e.is_active, 0) = 1
-  AND COALESCE(e.is_template, 0) = 0
-  AND (og.name = 'event_type' OR og.name IS NULL)
-  AND e.start_date BETWEEN :start AND :end
-GROUP BY event_type_id, event_type_label
-ORDER BY event_type_label ASC
-SQL,
-    ],
   ];
 
   /**
@@ -347,39 +292,29 @@ SQL,
       'description' => 'Summarizes donors, gifts, and dollars by annual gift range.',
       'queries' => [],
     ],
-    'event_type_metrics' => [
-      'label' => 'Event Type Metrics',
-      'description' => 'Summarizes counted event registrations and revenue by event type.',
-      'queries' => ['sql_event_type_metrics'],
-    ],
-    'event_type_counts' => [
-      'label' => 'Events Held by Type',
-      'description' => 'Derived dataset summarizing the number of events per event type.',
-      'queries' => [],
-    ],
-    'event_type_registrations' => [
-      'label' => 'Event Registrations by Type',
-      'description' => 'Derived dataset summarizing counted registrations per event type.',
-      'queries' => [],
-    ],
-    'event_type_revenue' => [
-      'label' => 'Event Revenue by Type',
-      'description' => 'Derived dataset summarizing revenue per event type.',
-      'queries' => [],
-    ],
     'survey_metrics' => [
       'label' => 'Annual Survey Metrics',
       'description' => 'Stores imported satisfaction and recommendation scores from the annual member survey.',
       'queries' => [],
     ],
-    'tool_availability' => [
-      'label' => 'Tool Availability Metrics',
-      'description' => 'Placeholder entry for future asset_status-driven uptime calculations.',
+    'revenue_totals' => [
+      'label' => 'Membership Revenue',
+      'description' => 'Aggregates current MRR from member payment fields. Ephemeral: field_member_payment_monthly is overwritten in place on each Chargebee sync.',
       'queries' => [],
     ],
-    'event_registrations' => [
-      'label' => 'Event Registrations',
-      'description' => 'Currently populated via CSV import. No automated SQL source has been implemented yet.',
+    'storage_occupancy' => [
+      'label' => 'Storage Occupancy',
+      'description' => 'Point-in-time occupancy and MRR for storage units. Ephemeral: assignments are mutated in place with no history log.',
+      'queries' => [],
+    ],
+    'member_certifications' => [
+      'label' => 'Member Certifications',
+      'description' => 'Active and pending badge certification counts by equipment type. Ephemeral: badge status fields are overwritten in place.',
+      'queries' => [],
+    ],
+    'active_access_grants' => [
+      'label' => 'Active Door Access Grants',
+      'description' => 'Count of members with active door access badges at snapshot date.',
       'queries' => [],
     ],
   ];
@@ -448,14 +383,6 @@ SQL,
       'acquisition' => 'automated',
       'data_source' => 'CiviCRM SQL',
     ],
-    'event_registrations' => [
-      'label' => 'Event Registrations',
-      'schedules' => ['daily'],
-      'headers' => ['snapshot_date', 'event_id', 'event_title', 'event_start_date', 'registration_count'],
-      'dataset_type' => 'event_registrations',
-      'acquisition' => 'import',
-      'data_source' => 'Manual Import',
-    ],
     'plan_levels' => [
       'label' => 'Membership Plan Levels',
       'schedules' => ['monthly', 'quarterly', 'annually'],
@@ -488,49 +415,6 @@ SQL,
       'acquisition' => 'automated',
       'data_source' => 'Drupal SQL',
     ],
-    'event_type_metrics' => [
-      'label' => 'Event Type Metrics',
-      'schedules' => ['monthly', 'quarterly', 'annually'],
-      'headers' => [
-        'snapshot_date',
-        'period_year',
-        'period_quarter',
-        'period_month',
-        'event_type_id',
-        'event_type_label',
-        'events_count',
-        'participant_count',
-        'total_amount',
-        'average_ticket',
-      ],
-      'dataset_type' => 'event_type_metrics',
-      'acquisition' => 'automated',
-      'data_source' => 'CiviCRM SQL',
-    ],
-    'event_type_counts' => [
-      'label' => 'Events Held by Type',
-      'schedules' => ['monthly', 'quarterly', 'annually'],
-      'headers' => ['snapshot_date'],
-      'dataset_type' => 'event_type_counts',
-      'acquisition' => 'derived',
-      'data_source' => 'Derived from Event Type Metrics',
-    ],
-    'event_type_registrations' => [
-      'label' => 'Event Registrations by Type',
-      'schedules' => ['monthly', 'quarterly', 'annually'],
-      'headers' => ['snapshot_date'],
-      'dataset_type' => 'event_type_registrations',
-      'acquisition' => 'derived',
-      'data_source' => 'Derived from Event Type Metrics',
-    ],
-    'event_type_revenue' => [
-      'label' => 'Event Revenue by Type',
-      'schedules' => ['monthly', 'quarterly', 'annually'],
-      'headers' => ['snapshot_date'],
-      'dataset_type' => 'event_type_revenue',
-      'acquisition' => 'derived',
-      'data_source' => 'Derived from Event Type Metrics',
-    ],
     'survey_metrics' => [
       'label' => 'Member Survey Metrics',
       'schedules' => ['annually'],
@@ -552,24 +436,67 @@ SQL,
       'acquisition' => 'import',
       'data_source' => 'Manual Import',
     ],
-    'tool_availability' => [
-      'label' => 'Tool Availability Metrics',
-      'schedules' => ['daily', 'monthly'],
+    'revenue_totals' => [
+      'label' => 'Membership Revenue',
+      'schedules' => ['monthly', 'quarterly', 'annually'],
       'headers' => [
         'snapshot_date',
-        'period_year',
-        'period_month',
-        'period_day',
-        'total_tools',
-        'available_tools',
-        'down_tools',
-        'maintenance_tools',
-        'unknown_tools',
-        'availability_percent',
+        'active_count',
+        'paused_count',
+        'active_mrr',
+        'paused_mrr',
+        'total_mrr',
+        'avg_monthly_active',
       ],
-      'dataset_type' => 'tool_availability',
-      'acquisition' => 'placeholder',
-      'data_source' => 'External API',
+      'dataset_type' => 'revenue_totals',
+      'acquisition' => 'automated',
+      'data_source' => 'Drupal SQL',
+    ],
+    'storage_occupancy' => [
+      'label' => 'Storage Occupancy',
+      'schedules' => ['monthly'],
+      'headers' => [
+        'snapshot_date',
+        'units_total',
+        'units_occupied',
+        'units_vacant',
+        'occupancy_rate',
+        'billed_mrr',
+        'complimentary_mrr',
+        'total_mrr',
+        'potential_mrr',
+        'active_violations',
+        'violations_accrued',
+      ],
+      'dataset_type' => 'storage_occupancy',
+      'acquisition' => 'automated',
+      'data_source' => 'Drupal SQL',
+    ],
+    'member_certifications' => [
+      'label' => 'Member Certifications',
+      'schedules' => ['monthly'],
+      'headers' => [
+        'snapshot_date',
+        'badge_tid',
+        'badge_name',
+        'active_count',
+        'pending_count',
+      ],
+      'dataset_type' => 'member_certifications',
+      'acquisition' => 'automated',
+      'data_source' => 'Drupal SQL',
+    ],
+    'active_access_grants' => [
+      'label' => 'Active Door Access Grants',
+      'schedules' => ['monthly'],
+      'headers' => [
+        'snapshot_date',
+        'door_badge_tid',
+        'active_grants',
+      ],
+      'dataset_type' => 'active_access_grants',
+      'acquisition' => 'automated',
+      'data_source' => 'Drupal SQL',
     ],
   ];
 
@@ -639,16 +566,6 @@ SQL,
           $headers[] = 'membership_type_' . $tid;
         }
         $definitions['membership_type_cancels']['headers'] = $headers;
-      }
-    }
-    $eventTypeColumns = $this->getEventTypeColumns();
-    $eventTypeHeader = ['snapshot_date'];
-    foreach (array_keys($eventTypeColumns) as $column) {
-      $eventTypeHeader[] = $column;
-    }
-    foreach (['event_type_counts', 'event_type_registrations', 'event_type_revenue'] as $definition) {
-      if (isset($definitions[$definition])) {
-        $definitions[$definition]['headers'] = $eventTypeHeader;
       }
     }
     return $definitions;
@@ -724,12 +641,6 @@ SQL,
       if (empty($selectedDefinitions)) {
         $this->logger->warning('No eligible dataset definitions selected for snapshot type @type using source @source.', ['@type' => $snapshot_type, '@source' => $source]);
         return;
-      }
-
-      $eventTypeDerived = ['event_type_counts', 'event_type_registrations', 'event_type_revenue'];
-      $needsEventMetrics = array_intersect($selectedDefinitions, array_merge(['event_type_metrics'], $eventTypeDerived));
-      if (!empty($needsEventMetrics)) {
-        $selectedDefinitions = array_values(array_unique(array_merge($selectedDefinitions, ['event_type_metrics'], $eventTypeDerived)));
       }
 
       if (in_array('donation_range_metrics', $selectedDefinitions, TRUE) && !in_array('donation_metrics', $selectedDefinitions, TRUE)) {
@@ -925,51 +836,6 @@ SQL,
         );
       }
 
-      $eventTypeSnapshotDefinitions = array_intersect(
-        ['event_type_metrics', 'event_type_counts', 'event_type_registrations', 'event_type_revenue'],
-        array_keys($snapshotIds)
-      );
-      if (!empty($eventTypeSnapshotDefinitions)) {
-        $eventTypeMetrics = $this->calculateEventTypeMetrics($periodStartObject, $periodEndObject);
-        if (!empty($eventTypeMetrics)) {
-          $normalizedType = strtolower((string) $snapshot_type);
-          $periodYear = (int) $periodStartObject->format('Y');
-          $monthValue = (int) $periodStartObject->format('n');
-          $periodMonth = $normalizedType === 'annually' ? 0 : $monthValue;
-          $periodQuarter = $normalizedType === 'annually' ? 0 : (int) ceil($monthValue / 3);
-
-          foreach ($eventTypeSnapshotDefinitions as $definition) {
-            $this->persistEventTypeSnapshot(
-              (int) $snapshotIds[$definition],
-              $eventTypeMetrics,
-              $periodYear,
-              $periodQuarter,
-              $periodMonth
-            );
-          }
-        }
-      }
-
-      if (isset($snapshotIds['tool_availability'])) {
-        $toolMetrics = $this->calculateToolAvailabilityMetrics($periodStartObject, $periodEndObject);
-        if (!empty($toolMetrics)) {
-          $this->database->insert('ms_fact_tool_uptime_snapshot')
-            ->fields([
-              'snapshot_id' => $snapshotIds['tool_availability'],
-              'period_year' => $toolMetrics['period_year'],
-              'period_month' => $toolMetrics['period_month'],
-              'period_day' => $toolMetrics['period_day'],
-              'total_tools' => $toolMetrics['total_tools'],
-              'available_tools' => $toolMetrics['available_tools'],
-              'down_tools' => $toolMetrics['down_tools'],
-              'maintenance_tools' => $toolMetrics['maintenance_tools'],
-              'unknown_tools' => $toolMetrics['unknown_tools'],
-              'availability_percent' => $toolMetrics['availability_percent'],
-            ])
-            ->execute();
-        }
-      }
-
       if (isset($snapshotIds['membership_totals'])) {
         $snapshot_id = $snapshotIds['membership_totals'];
         $kpiContext = [
@@ -991,6 +857,66 @@ SQL,
         $kpiValues = $this->collectKpiMetrics($kpiContext);
         if (!empty($kpiValues)) {
           $this->storeKpiMetrics($snapshot_id, $snapshotDate, $kpiValues);
+        }
+      }
+
+      if (isset($snapshotIds['revenue_totals'])) {
+        $revData = $this->calculateRevenueTotals();
+        $this->database->insert('ms_fact_revenue_snapshot')
+          ->fields([
+            'snapshot_id' => $snapshotIds['revenue_totals'],
+            'active_count' => $revData['active_count'],
+            'paused_count' => $revData['paused_count'],
+            'active_mrr' => $revData['active_mrr'],
+            'paused_mrr' => $revData['paused_mrr'],
+            'total_mrr' => $revData['total_mrr'],
+            'avg_monthly_active' => $revData['avg_monthly_active'],
+          ])->execute();
+      }
+
+      if (isset($snapshotIds['storage_occupancy'])) {
+        $storageData = $this->calculateStorageOccupancy();
+        if ($storageData !== NULL) {
+          $this->database->insert('ms_fact_storage_snapshot')
+            ->fields([
+              'snapshot_id' => $snapshotIds['storage_occupancy'],
+              'units_total' => $storageData['units_total'],
+              'units_occupied' => $storageData['units_occupied'],
+              'units_vacant' => $storageData['units_vacant'],
+              'occupancy_rate' => $storageData['occupancy_rate'],
+              'billed_mrr' => $storageData['billed_mrr'],
+              'complimentary_mrr' => $storageData['complimentary_mrr'],
+              'total_mrr' => $storageData['total_mrr'],
+              'potential_mrr' => $storageData['potential_mrr'],
+              'active_violations' => $storageData['active_violations'],
+              'violations_accrued' => $storageData['violations_accrued'],
+            ])->execute();
+        }
+      }
+
+      if (isset($snapshotIds['member_certifications'])) {
+        $certRows = $this->calculateMemberCertifications();
+        foreach ($certRows as $cert) {
+          $this->database->insert('ms_fact_certification_snapshot')
+            ->fields([
+              'snapshot_id' => $snapshotIds['member_certifications'],
+              'badge_tid' => $cert['badge_tid'],
+              'badge_name' => $cert['badge_name'],
+              'active_count' => $cert['active_count'],
+              'pending_count' => $cert['pending_count'],
+            ])->execute();
+        }
+      }
+
+      if (isset($snapshotIds['active_access_grants'])) {
+        $accessData = $this->calculateActiveAccessGrants();
+        if ($accessData !== NULL) {
+          $this->database->insert('ms_fact_access_snapshot')
+            ->fields([
+              'snapshot_id' => $snapshotIds['active_access_grants'],
+              'door_badge_tid' => $accessData['door_badge_tid'],
+              'active_grants' => $accessData['active_grants'],
+            ])->execute();
         }
       }
 
@@ -1050,13 +976,14 @@ SQL,
       'ms_fact_plan_snapshot',
       'ms_fact_donation_snapshot',
       'ms_fact_donation_range_snapshot',
-      'ms_fact_event_type_snapshot',
       'ms_fact_survey_snapshot',
-      'ms_fact_event_snapshot',
       'ms_fact_kpi_snapshot',
       'ms_fact_membership_type_snapshot',
       'ms_fact_membership_activity',
-      'ms_fact_tool_uptime_snapshot',
+      'ms_fact_revenue_snapshot',
+      'ms_fact_storage_snapshot',
+      'ms_fact_certification_snapshot',
+      'ms_fact_access_snapshot',
     ] as $table) {
       if ($this->database->schema()->tableExists($table)) {
         $this->database->delete($table)
@@ -1143,20 +1070,6 @@ SQL,
         }
         return $labels;
 
-      case 'event_type_counts':
-      case 'event_type_registrations':
-      case 'event_type_revenue':
-        $types = $this->getEventTypeColumns();
-        foreach ($header as $column) {
-          if ($column === 'snapshot_date') {
-            $labels[] = 'Snapshot Date';
-          }
-          else {
-            $labels[] = $types[$column] ?? $this->defaultColumnLabel($column);
-          }
-        }
-        return $labels;
-
       default:
         foreach ($header as $column) {
           $labels[] = $this->defaultColumnLabel($column);
@@ -1212,32 +1125,6 @@ SQL,
 
     $definitions = $this->buildDefinitions();
     $data = [];
-
-    $eventTypeRowsCache = [];
-    $loadEventTypeRows = function (?int $snapshotId) use (&$eventTypeRowsCache) {
-      if (!$snapshotId) {
-        return [];
-      }
-      if (!isset($eventTypeRowsCache[$snapshotId])) {
-        $eventTypeRowsCache[$snapshotId] = $this->database->select('ms_fact_event_type_snapshot', 'e')
-          ->fields('e', [
-            'event_type_id',
-            'event_type_label',
-            'events_count',
-            'participant_count',
-            'total_amount',
-            'average_ticket',
-            'period_year',
-            'period_quarter',
-            'period_month',
-          ])
-          ->condition('snapshot_id', $snapshotId)
-          ->orderBy('event_type_label')
-          ->execute()
-          ->fetchAll(\PDO::FETCH_ASSOC);
-      }
-      return $eventTypeRowsCache[$snapshotId];
-    };
 
     // Membership totals.
     if (isset($definitions['membership_totals'])) {
@@ -1304,35 +1191,6 @@ SQL,
         'filename' => 'plan_levels.csv',
         'header' => $header,
         'label_row' => $this->getDatasetLabelRow('plan_levels', $header),
-        'rows' => $rows,
-      ];
-    }
-
-    // Event registrations.
-    if (isset($definitions['event_registrations'])) {
-      $header = $definitions['event_registrations']['headers'];
-      $rows = [];
-      $eventId = $snapshotRows['event_registrations']->id ?? NULL;
-      if ($eventId) {
-        $result = $this->database->select('ms_fact_event_snapshot', 'e')
-          ->fields('e', ['event_id', 'event_title', 'event_start_date', 'registration_count'])
-          ->condition('snapshot_id', $eventId)
-          ->orderBy('event_start_date')
-          ->execute();
-        foreach ($result as $record) {
-          $rows[] = [
-            $normalizedDate,
-            $record->event_id,
-            $record->event_title,
-            $record->event_start_date,
-            (int) $record->registration_count,
-          ];
-        }
-      }
-      $data['event_registrations'] = [
-        'filename' => 'event_registrations.csv',
-        'header' => $header,
-        'label_row' => $this->getDatasetLabelRow('event_registrations', $header),
         'rows' => $rows,
       ];
     }
@@ -1477,117 +1335,6 @@ SQL,
       }
     }
 
-    if (isset($definitions['event_type_metrics'])) {
-      $header = $definitions['event_type_metrics']['headers'];
-      $rows = [];
-      $snapshotId = $snapshotRows['event_type_metrics']->id ?? NULL;
-      foreach ($loadEventTypeRows($snapshotId) as $record) {
-        $row = [];
-        foreach ($header as $column) {
-          switch ($column) {
-            case 'snapshot_date':
-              $row[] = $normalizedDate;
-              break;
-
-            case 'event_type_label':
-              $row[] = (string) ($record['event_type_label'] ?? '');
-              break;
-
-            case 'event_type_id':
-              $row[] = isset($record['event_type_id']) && $record['event_type_id'] !== NULL
-                ? (int) $record['event_type_id']
-                : '';
-              break;
-
-            case 'total_amount':
-            case 'average_ticket':
-              $row[] = round((float) ($record[$column] ?? 0), 2);
-              break;
-
-            default:
-              $row[] = (int) ($record[$column] ?? 0);
-              break;
-          }
-        }
-        $rows[] = $row;
-      }
-      $data['event_type_metrics'] = [
-        'filename' => 'event_type_metrics.csv',
-        'header' => $header,
-        'label_row' => $this->getDatasetLabelRow('event_type_metrics', $header),
-        'rows' => $rows,
-      ];
-    }
-
-    $eventTypeColumns = $this->getEventTypeColumns();
-    $eventTypeHeader = ['snapshot_date'];
-    foreach (array_keys($eventTypeColumns) as $column) {
-      $eventTypeHeader[] = $column;
-    }
-
-    $buildEventTypePivotRow = function (?int $snapshotId, string $valueKey, bool $isCurrency = FALSE) use ($loadEventTypeRows, $eventTypeColumns, $eventTypeHeader, $normalizedDate) {
-      if (!$snapshotId) {
-        return [];
-      }
-      $values = array_fill_keys($eventTypeHeader, '');
-      $values['snapshot_date'] = $normalizedDate;
-      $hasData = FALSE;
-      foreach ($loadEventTypeRows($snapshotId) as $record) {
-        $column = $this->mapEventTypeColumn($record['event_type_id'] ?? NULL);
-        if (!array_key_exists($column, $values)) {
-          $values[$column] = '';
-        }
-        if (isset($record[$valueKey])) {
-          $hasData = TRUE;
-          $values[$column] = $isCurrency
-            ? round((float) $record[$valueKey], 2)
-            : (int) $record[$valueKey];
-        }
-      }
-      if (!$hasData) {
-        return [];
-      }
-      $row = [];
-      foreach ($eventTypeHeader as $column) {
-        $row[] = $values[$column];
-      }
-      return [$row];
-    };
-
-    if (isset($definitions['event_type_counts'])) {
-      $snapshotId = $snapshotRows['event_type_counts']->id ?? NULL;
-      $rows = $buildEventTypePivotRow($snapshotId, 'events_count', FALSE);
-      $data['event_type_counts'] = [
-        'filename' => 'event_type_counts.csv',
-        'header' => $eventTypeHeader,
-        'label_row' => $this->getDatasetLabelRow('event_type_counts', $eventTypeHeader),
-        'rows' => $rows,
-      ];
-    }
-
-    if (isset($definitions['event_type_registrations'])) {
-      $snapshotId = $snapshotRows['event_type_registrations']->id ?? NULL;
-      $rows = $buildEventTypePivotRow($snapshotId, 'participant_count', FALSE);
-      $data['event_type_registrations'] = [
-        'filename' => 'event_type_registrations.csv',
-        'header' => $eventTypeHeader,
-        'label_row' => $this->getDatasetLabelRow('event_type_registrations', $eventTypeHeader),
-        'rows' => $rows,
-      ];
-    }
-
-    if (isset($definitions['event_type_revenue'])) {
-      $snapshotId = $snapshotRows['event_type_revenue']->id ?? NULL;
-      $rows = $buildEventTypePivotRow($snapshotId, 'total_amount', TRUE);
-      $data['event_type_revenue'] = [
-        'filename' => 'event_type_revenue.csv',
-        'header' => $eventTypeHeader,
-        'label_row' => $this->getDatasetLabelRow('event_type_revenue', $eventTypeHeader),
-        'rows' => $rows,
-      ];
-    }
-
-
     if (isset($definitions['survey_metrics'])) {
       $header = $definitions['survey_metrics']['headers'];
       $rows = [];
@@ -1638,37 +1385,120 @@ SQL,
       ];
     }
 
-    if (isset($definitions['tool_availability'])) {
-      $header = $definitions['tool_availability']['headers'];
+    if (isset($definitions['revenue_totals'])) {
+      $header = $definitions['revenue_totals']['headers'];
       $rows = [];
-      $toolId = $snapshotRows['tool_availability']->id ?? NULL;
-      if ($toolId) {
-        $record = $this->database->select('ms_fact_tool_uptime_snapshot', 't')
-          ->fields('t')
-          ->condition('snapshot_id', $toolId)
+      $revId = $snapshotRows['revenue_totals']->id ?? NULL;
+      if ($revId) {
+        $record = $this->database->select('ms_fact_revenue_snapshot', 'r')
+          ->fields('r')
+          ->condition('snapshot_id', $revId)
           ->execute()
           ->fetchAssoc();
         if ($record) {
-          $values = array_fill_keys($header, '');
-          $values['snapshot_date'] = $normalizedDate;
-          foreach ($header as $column) {
-            if ($column === 'snapshot_date' || !isset($record[$column])) {
-              continue;
-            }
-            if ($column === 'availability_percent') {
-              $values[$column] = round((float) $record[$column], 2);
-            }
-            else {
-              $values[$column] = (int) $record[$column];
-            }
-          }
-          $rows[] = array_values($values);
+          $rows[] = [
+            $normalizedDate,
+            (int) $record['active_count'],
+            (int) $record['paused_count'],
+            round((float) $record['active_mrr'], 2),
+            round((float) $record['paused_mrr'], 2),
+            round((float) $record['total_mrr'], 2),
+            round((float) $record['avg_monthly_active'], 2),
+          ];
         }
       }
-      $data['tool_availability'] = [
-        'filename' => 'tool_availability.csv',
+      $data['revenue_totals'] = [
+        'filename' => 'revenue_totals.csv',
         'header' => $header,
-        'label_row' => $this->getDatasetLabelRow('tool_availability', $header),
+        'label_row' => $this->getDatasetLabelRow('revenue_totals', $header),
+        'rows' => $rows,
+      ];
+    }
+
+    if (isset($definitions['storage_occupancy'])) {
+      $header = $definitions['storage_occupancy']['headers'];
+      $rows = [];
+      $storId = $snapshotRows['storage_occupancy']->id ?? NULL;
+      if ($storId && $this->database->schema()->tableExists('ms_fact_storage_snapshot')) {
+        $record = $this->database->select('ms_fact_storage_snapshot', 's')
+          ->fields('s')
+          ->condition('snapshot_id', $storId)
+          ->execute()
+          ->fetchAssoc();
+        if ($record) {
+          $rows[] = [
+            $normalizedDate,
+            (int) $record['units_total'],
+            (int) $record['units_occupied'],
+            (int) $record['units_vacant'],
+            round((float) $record['occupancy_rate'], 2),
+            round((float) $record['billed_mrr'], 2),
+            round((float) $record['complimentary_mrr'], 2),
+            round((float) $record['total_mrr'], 2),
+            round((float) $record['potential_mrr'], 2),
+            (int) $record['active_violations'],
+            round((float) $record['violations_accrued'], 2),
+          ];
+        }
+      }
+      $data['storage_occupancy'] = [
+        'filename' => 'storage_occupancy.csv',
+        'header' => $header,
+        'label_row' => $this->getDatasetLabelRow('storage_occupancy', $header),
+        'rows' => $rows,
+      ];
+    }
+
+    if (isset($definitions['member_certifications'])) {
+      $header = $definitions['member_certifications']['headers'];
+      $rows = [];
+      $certId = $snapshotRows['member_certifications']->id ?? NULL;
+      if ($certId && $this->database->schema()->tableExists('ms_fact_certification_snapshot')) {
+        $result = $this->database->select('ms_fact_certification_snapshot', 'c')
+          ->fields('c', ['badge_tid', 'badge_name', 'active_count', 'pending_count'])
+          ->condition('snapshot_id', $certId)
+          ->orderBy('badge_name')
+          ->execute();
+        foreach ($result as $record) {
+          $rows[] = [
+            $normalizedDate,
+            (int) $record->badge_tid,
+            (string) $record->badge_name,
+            (int) $record->active_count,
+            (int) $record->pending_count,
+          ];
+        }
+      }
+      $data['member_certifications'] = [
+        'filename' => 'member_certifications.csv',
+        'header' => $header,
+        'label_row' => $this->getDatasetLabelRow('member_certifications', $header),
+        'rows' => $rows,
+      ];
+    }
+
+    if (isset($definitions['active_access_grants'])) {
+      $header = $definitions['active_access_grants']['headers'];
+      $rows = [];
+      $accessId = $snapshotRows['active_access_grants']->id ?? NULL;
+      if ($accessId && $this->database->schema()->tableExists('ms_fact_access_snapshot')) {
+        $record = $this->database->select('ms_fact_access_snapshot', 'a')
+          ->fields('a')
+          ->condition('snapshot_id', $accessId)
+          ->execute()
+          ->fetchAssoc();
+        if ($record) {
+          $rows[] = [
+            $normalizedDate,
+            (int) $record['door_badge_tid'],
+            (int) $record['active_grants'],
+          ];
+        }
+      }
+      $data['active_access_grants'] = [
+        'filename' => 'active_access_grants.csv',
+        'header' => $header,
+        'label_row' => $this->getDatasetLabelRow('active_access_grants', $header),
         'rows' => $rows,
       ];
     }
@@ -2239,123 +2069,6 @@ SQL,
   }
 
   /**
-   * Returns known event type definitions keyed by ID.
-   */
-  protected function getEventTypeDefinitions(): array {
-    if ($this->eventTypeDefinitions !== NULL) {
-      return $this->eventTypeDefinitions;
-    }
-
-    $config = $this->configFactory->getEditable('makerspace_snapshot.event_types');
-    $stored = $config->get('types') ?? [];
-    $definitions = [];
-    foreach ($stored as $item) {
-      $id = isset($item['id']) ? (int) $item['id'] : 0;
-      $definitions[$id] = $item['label'] ?? ('Event Type ' . $id);
-    }
-
-    $dirty = FALSE;
-    $schema = $this->database->schema();
-    $eventTypeGroupId = $this->getOptionGroupId('event_type');
-    if ($eventTypeGroupId && $schema->tableExists('civicrm_option_value')) {
-      $result = $this->database->select('civicrm_option_value', 'ov')
-        ->fields('ov', ['value', 'label'])
-        ->condition('ov.option_group_id', $eventTypeGroupId)
-        ->condition('ov.is_active', 1)
-        ->orderBy('ov.weight', 'ASC')
-        ->orderBy('ov.label', 'ASC')
-        ->execute();
-      foreach ($result as $record) {
-        $value = isset($record->value) ? (int) $record->value : 0;
-        $label = trim((string) $record->label) ?: ('Event Type ' . $value);
-        if (!isset($definitions[$value]) || $definitions[$value] !== $label) {
-          $definitions[$value] = $label;
-          $dirty = TRUE;
-        }
-      }
-    }
-
-    if (empty($definitions) && $schema->tableExists('ms_fact_event_type_snapshot')) {
-      $result = $this->database->select('ms_fact_event_type_snapshot', 'e')
-        ->fields('e', ['event_type_id', 'event_type_label'])
-        ->distinct()
-        ->execute();
-      foreach ($result as $record) {
-        $value = isset($record->event_type_id) && $record->event_type_id !== NULL ? (int) $record->event_type_id : 0;
-        $label = trim((string) $record->event_type_label) ?: ('Event Type ' . $value);
-        if (!isset($definitions[$value])) {
-          $definitions[$value] = $label;
-          $dirty = TRUE;
-        }
-      }
-    }
-
-    if (!isset($definitions[0])) {
-      $definitions[0] = 'Unknown Event Type';
-      $dirty = TRUE;
-    }
-
-    if ($dirty) {
-      $this->saveEventTypeDefinitions($definitions);
-    }
-    else {
-      $this->eventTypeDefinitions = $definitions;
-    }
-
-    return $definitions;
-  }
-
-  /**
-   * Persists event type definitions.
-   */
-  protected function saveEventTypeDefinitions(array $definitions): void {
-    ksort($definitions);
-    $config = $this->configFactory->getEditable('makerspace_snapshot.event_types');
-    $types = [];
-    foreach ($definitions as $id => $label) {
-      $types[] = [
-        'id' => (int) $id,
-        'label' => (string) $label,
-      ];
-    }
-    $config->set('types', $types)->save();
-    $this->eventTypeDefinitions = $definitions;
-  }
-
-  /**
-   * Registers an event type definition if new.
-   */
-  protected function registerEventTypeDefinition(?int $id, string $label): void {
-    $value = $id ?? 0;
-    $definitions = $this->getEventTypeDefinitions();
-    $label = trim($label) ?: ('Event Type ' . $value);
-    if (!isset($definitions[$value]) || $definitions[$value] !== $label) {
-      $definitions[$value] = $label;
-      $this->saveEventTypeDefinitions($definitions);
-    }
-  }
-
-  /**
-   * Returns event type column metadata keyed by column machine name.
-   */
-  protected function getEventTypeColumns(): array {
-    $definitions = $this->getEventTypeDefinitions();
-    $columns = [];
-    foreach ($definitions as $id => $label) {
-      $columns[$this->mapEventTypeColumn($id)] = $label;
-    }
-    return $columns;
-  }
-
-  /**
-   * Converts an event type ID to a column machine name.
-   */
-  protected function mapEventTypeColumn(?int $eventTypeId): string {
-    $value = $eventTypeId ?? 0;
-    return 'event_type_' . $value;
-  }
-
-  /**
    * Produces a human-friendly label for a dataset column.
    */
   protected function defaultColumnLabel(string $column): string {
@@ -2458,17 +2171,8 @@ SQL,
       case 'donation_range_metrics':
         $this->importDonationRangeSnapshot($snapshot_id, $payload);
         break;
-      case 'event_registrations':
-        $this->importEventSnapshot($snapshot_id, $payload);
-        break;
-      case 'event_type_metrics':
-        $this->importEventTypeMetricsSnapshot($snapshot_id, $payload);
-        break;
       case 'survey_metrics':
         $this->importSurveyMetricsSnapshot($snapshot_id, $payload);
-        break;
-      case 'tool_availability':
-        $this->importToolAvailabilitySnapshot($snapshot_id, $payload);
         break;
       case 'membership_types':
       case 'membership_type_joins':
@@ -2648,84 +2352,6 @@ SQL,
     }
   }
 
-  protected function importEventSnapshot($snapshot_id, array $payload) {
-    $events = $payload['events'] ?? [];
-    if (empty($events) || !is_array($events)) {
-      return;
-    }
-
-    $this->database->delete('ms_fact_event_snapshot')
-      ->condition('snapshot_id', (int) $snapshot_id)
-      ->execute();
-
-    foreach ($events as $event) {
-      $this->database->insert('ms_fact_event_snapshot')
-        ->fields([
-          'snapshot_id'        => (int) $snapshot_id,
-          'event_id'           => (int) $event['event_id'],
-          'event_title'        => $event['event_title'],
-          'event_start_date'   => $event['event_start_date'],
-          'registration_count' => (int) $event['registration_count'],
-        ])->execute();
-    }
-  }
-
-  protected function importEventTypeMetricsSnapshot($snapshot_id, array $payload) {
-    if (empty($payload['event_types']) || !is_array($payload['event_types'])) {
-      return;
-    }
-
-    // Deduplicate by event_type_label since PK is (snapshot_id, event_type_label).
-    // Merge rows with the same label by summing additive metrics.
-    $merged = [];
-    foreach ($payload['event_types'] as $row) {
-      $label = (string) ($row['event_type_label'] ?? 'Unknown');
-      if (!isset($merged[$label])) {
-        $merged[$label] = [
-          'period_year' => (int) ($row['period_year'] ?? 0),
-          'period_quarter' => (int) ($row['period_quarter'] ?? 0),
-          'period_month' => (int) ($row['period_month'] ?? 0),
-          'event_type_id' => isset($row['event_type_id']) && $row['event_type_id'] !== '' ? (int) $row['event_type_id'] : NULL,
-          'event_type_label' => $label,
-          'events_count' => (int) ($row['events_count'] ?? 0),
-          'participant_count' => (int) ($row['participant_count'] ?? 0),
-          'total_amount' => round((float) ($row['total_amount'] ?? 0), 2),
-          'average_ticket' => round((float) ($row['average_ticket'] ?? 0), 2),
-        ];
-      }
-      else {
-        $merged[$label]['events_count'] += (int) ($row['events_count'] ?? 0);
-        $merged[$label]['participant_count'] += (int) ($row['participant_count'] ?? 0);
-        $merged[$label]['total_amount'] = round($merged[$label]['total_amount'] + (float) ($row['total_amount'] ?? 0), 2);
-        // Recompute average_ticket from merged totals.
-        $merged[$label]['average_ticket'] = $merged[$label]['participant_count'] > 0
-          ? round($merged[$label]['total_amount'] / $merged[$label]['participant_count'], 2)
-          : 0;
-      }
-    }
-
-    $this->database->delete('ms_fact_event_type_snapshot')
-      ->condition('snapshot_id', $snapshot_id)
-      ->execute();
-
-    foreach ($merged as $row) {
-      $this->database->insert('ms_fact_event_type_snapshot')
-        ->fields([
-          'snapshot_id' => $snapshot_id,
-          'period_year' => $row['period_year'],
-          'period_quarter' => $row['period_quarter'],
-          'period_month' => $row['period_month'],
-          'event_type_id' => $row['event_type_id'],
-          'event_type_label' => $row['event_type_label'],
-          'events_count' => $row['events_count'],
-          'participant_count' => $row['participant_count'],
-          'total_amount' => $row['total_amount'],
-          'average_ticket' => $row['average_ticket'],
-        ])
-        ->execute();
-    }
-  }
-
   protected function importSurveyMetricsSnapshot($snapshot_id, array $payload) {
     $metrics = $payload['metrics'] ?? [];
     if (!is_array($metrics) || empty($metrics)) {
@@ -2776,34 +2402,6 @@ SQL,
       ->execute();
   }
 
-  protected function importToolAvailabilitySnapshot($snapshot_id, array $payload) {
-    $metrics = $payload['metrics'] ?? [];
-    if (!is_array($metrics) || empty($metrics)) {
-      return;
-    }
-
-    $fields = [
-      'snapshot_id' => $snapshot_id,
-      'period_year' => (int) ($metrics['period_year'] ?? date('Y')),
-      'period_month' => (int) ($metrics['period_month'] ?? 0),
-      'period_day' => (int) ($metrics['period_day'] ?? 0),
-      'total_tools' => (int) ($metrics['total_tools'] ?? 0),
-      'available_tools' => (int) ($metrics['available_tools'] ?? 0),
-      'down_tools' => (int) ($metrics['down_tools'] ?? 0),
-      'maintenance_tools' => (int) ($metrics['maintenance_tools'] ?? 0),
-      'unknown_tools' => (int) ($metrics['unknown_tools'] ?? 0),
-      'availability_percent' => round((float) ($metrics['availability_percent'] ?? 0), 2),
-    ];
-
-    $this->database->delete('ms_fact_tool_uptime_snapshot')
-      ->condition('snapshot_id', (int) $snapshot_id)
-      ->execute();
-
-    $this->database->insert('ms_fact_tool_uptime_snapshot')
-      ->fields($fields)
-      ->execute();
-  }
-
   /**
    * Prunes old snapshots.
    */
@@ -2848,15 +2446,7 @@ SQL,
       ->condition('snapshot_id', $snapshot_ids, 'IN')
       ->execute();
 
-    $this->database->delete('ms_fact_event_type_snapshot')
-      ->condition('snapshot_id', $snapshot_ids, 'IN')
-      ->execute();
-
     $this->database->delete('ms_fact_survey_snapshot')
-      ->condition('snapshot_id', $snapshot_ids, 'IN')
-      ->execute();
-
-    $this->database->delete('ms_fact_event_snapshot')
       ->condition('snapshot_id', $snapshot_ids, 'IN')
       ->execute();
 
@@ -2871,7 +2461,19 @@ SQL,
       ->condition('snapshot_id', $snapshot_ids, 'IN')
       ->execute();
 
-    $this->database->delete('ms_fact_tool_uptime_snapshot')
+    $this->database->delete('ms_fact_revenue_snapshot')
+      ->condition('snapshot_id', $snapshot_ids, 'IN')
+      ->execute();
+
+    $this->database->delete('ms_fact_storage_snapshot')
+      ->condition('snapshot_id', $snapshot_ids, 'IN')
+      ->execute();
+
+    $this->database->delete('ms_fact_certification_snapshot')
+      ->condition('snapshot_id', $snapshot_ids, 'IN')
+      ->execute();
+
+    $this->database->delete('ms_fact_access_snapshot')
       ->condition('snapshot_id', $snapshot_ids, 'IN')
       ->execute();
 
@@ -2916,187 +2518,6 @@ SQL,
       'start' => $start,
       'end' => $end,
     ];
-  }
-
-  /**
-   * Aggregates event metrics grouped by event type for the reporting window.
-   */
-  protected function calculateEventTypeMetrics(\DateTimeImmutable $periodStart, \DateTimeImmutable $periodEnd): array {
-    $schema = $this->database->schema();
-    if (
-      !$schema->tableExists('civicrm_participant') ||
-      !$schema->tableExists('civicrm_event') ||
-      !$schema->tableExists('civicrm_participant_status_type') ||
-      !$schema->tableExists('civicrm_participant_payment') ||
-      !$schema->tableExists('civicrm_contribution')
-    ) {
-      return [];
-    }
-
-    if (
-      !$schema->fieldExists('civicrm_participant_status_type', 'is_cancelled') ||
-      !$schema->fieldExists('civicrm_participant_status_type', 'is_counted')
-    ) {
-      return [];
-    }
-
-    $eventTypeGroupId = $this->getOptionGroupId('event_type');
-    $contributionStatusGroupId = $this->getOptionGroupId('contribution_status');
-
-    $query = $this->database->select('civicrm_participant', 'p');
-    $query->innerJoin('civicrm_event', 'e', 'e.id = p.event_id');
-    $query->innerJoin('civicrm_participant_status_type', 'pst', 'pst.id = p.status_id');
-    $query->leftJoin('civicrm_participant_payment', 'pp', 'pp.participant_id = p.id');
-    $query->leftJoin('civicrm_contribution', 'c', 'c.id = pp.contribution_id');
-
-    if ($eventTypeGroupId) {
-      $query->leftJoin('civicrm_option_value', 'ov', 'ov.option_group_id = ' . (int) $eventTypeGroupId . ' AND ov.value = e.event_type_id');
-    }
-    else {
-      $query->leftJoin('civicrm_option_value', 'ov', 'ov.value = e.event_type_id');
-    }
-
-    if ($contributionStatusGroupId) {
-      $query->leftJoin('civicrm_option_value', 'cs', 'cs.option_group_id = ' . (int) $contributionStatusGroupId . ' AND cs.value = c.contribution_status_id');
-    }
-
-    $query->condition('pst.is_counted', 1);
-    $query->condition('pst.is_cancelled', 0);
-    $query->condition('COALESCE(e.is_active, 0)', 1);
-    $query->condition('COALESCE(e.is_template, 0)', 0);
-    $query->condition('e.start_date', [$periodStart->format('Y-m-d H:i:s'), $periodEnd->format('Y-m-d H:i:s')], 'BETWEEN');
-
-    $query->addExpression('COALESCE(ov.value, e.event_type_id)', 'event_type_id');
-    $query->addExpression("COALESCE(ov.label, CONCAT('Type ', e.event_type_id))", 'event_type_label');
-    $query->addExpression('COUNT(DISTINCT e.id)', 'events_count');
-    $query->addExpression('COUNT(DISTINCT p.id)', 'participant_count');
-
-    $revenueArgs = [];
-    if ($contributionStatusGroupId) {
-      $disallowedNames = ['cancelled', 'refunded', 'pending refund', 'pending_refund', 'chargeback', 'failed'];
-      $placeholders = [];
-      foreach ($disallowedNames as $index => $statusName) {
-        $placeholder = ':disallowed_status_' . $index;
-        $placeholders[] = $placeholder;
-        $revenueArgs[$placeholder] = strtolower($statusName);
-      }
-      if ($placeholders) {
-        $placeholderString = implode(', ', $placeholders);
-        $revenueExpression = "SUM(CASE WHEN c.id IS NULL OR COALESCE(c.is_test, 0) = 1 THEN 0 WHEN LOWER(cs.name) IN ($placeholderString) THEN 0 ELSE COALESCE(c.total_amount, 0) END)";
-      }
-      else {
-        $revenueExpression = 'SUM(CASE WHEN c.id IS NULL OR COALESCE(c.is_test, 0) = 1 THEN 0 ELSE COALESCE(c.total_amount, 0) END)';
-      }
-    }
-    else {
-      $disallowedIds = [3, 7, 8, 9];
-      $placeholders = [];
-      foreach ($disallowedIds as $index => $statusId) {
-        $placeholder = ':disallowed_status_id_' . $index;
-        $placeholders[] = $placeholder;
-        $revenueArgs[$placeholder] = $statusId;
-      }
-      if ($placeholders) {
-        $placeholderString = implode(', ', $placeholders);
-        $revenueExpression = "SUM(CASE WHEN c.id IS NULL OR COALESCE(c.is_test, 0) = 1 THEN 0 WHEN c.contribution_status_id IN ($placeholderString) THEN 0 ELSE COALESCE(c.total_amount, 0) END)";
-      }
-      else {
-        $revenueExpression = 'SUM(CASE WHEN c.id IS NULL OR COALESCE(c.is_test, 0) = 1 THEN 0 ELSE COALESCE(c.total_amount, 0) END)';
-      }
-    }
-
-    $query->addExpression($revenueExpression, 'total_revenue', $revenueArgs);
-
-    $query->groupBy('event_type_id');
-    $query->groupBy('event_type_label');
-    $query->orderBy('event_type_label', 'ASC');
-
-    $records = $query->execute();
-
-    $metrics = [];
-    foreach ($records as $record) {
-      $participants = (int) $record->participant_count;
-      $eventsHeld = (int) $record->events_count;
-      $totalAmount = round((float) $record->total_revenue, 2);
-      $label = trim((string) $record->event_type_label) !== '' ? (string) $record->event_type_label : 'Unknown';
-      $eventTypeId = isset($record->event_type_id) && $record->event_type_id !== '' ? (int) $record->event_type_id : NULL;
-      $average = $participants > 0 ? round($totalAmount / $participants, 2) : 0.0;
-
-      if ($eventsHeld === 0 && $participants === 0 && $totalAmount === 0.0) {
-        continue;
-      }
-
-      $this->registerEventTypeDefinition($eventTypeId ?? 0, $label);
-
-      $metrics[] = [
-        'event_type_id' => $eventTypeId,
-        'event_type_label' => $label,
-        'events_count' => $eventsHeld,
-        'participant_count' => $participants,
-        'total_amount' => $totalAmount,
-        'average_ticket' => $average,
-      ];
-    }
-
-    return $metrics;
-  }
-
-  /**
-   * Persists rows into the event type snapshot fact table.
-   */
-  protected function persistEventTypeSnapshot(int $snapshotId, array $rows, int $periodYear, int $periodQuarter, int $periodMonth): void {
-    $this->database->delete('ms_fact_event_type_snapshot')
-      ->condition('snapshot_id', $snapshotId)
-      ->execute();
-
-    if (empty($rows)) {
-      return;
-    }
-
-    foreach ($rows as $metric) {
-      $this->database->insert('ms_fact_event_type_snapshot')
-        ->fields([
-          'snapshot_id' => $snapshotId,
-          'period_year' => $periodYear,
-          'period_quarter' => $periodQuarter,
-          'period_month' => $periodMonth,
-          'event_type_id' => $metric['event_type_id'],
-          'event_type_label' => $metric['event_type_label'],
-          'events_count' => (int) ($metric['events_count'] ?? 0),
-          'participant_count' => (int) ($metric['participant_count'] ?? 0),
-          'total_amount' => round((float) ($metric['total_amount'] ?? 0), 2),
-          'average_ticket' => round((float) ($metric['average_ticket'] ?? 0), 2),
-        ])
-        ->execute();
-    }
-  }
-
-  /**
-   * Placeholder tool availability metrics until asset_status aggregation lands.
-   */
-  protected function calculateToolAvailabilityMetrics(\DateTimeImmutable $periodStart, \DateTimeImmutable $periodEnd): array {
-    $periodYear = (int) $periodStart->format('Y');
-    $periodMonth = (int) $periodStart->format('n');
-    $periodDay = (int) $periodStart->format('j');
-
-    $metrics = [
-      'period_year' => $periodYear,
-      'period_month' => $periodMonth,
-      'period_day' => $periodDay,
-      'total_tools' => 0,
-      'available_tools' => 0,
-      'down_tools' => 0,
-      'maintenance_tools' => 0,
-      'unknown_tools' => 0,
-      'availability_percent' => 0.0,
-    ];
-
-    if (!$this->moduleHandler->moduleExists('asset_status')) {
-      return $metrics;
-    }
-
-    // @todo Leverage asset_status once uptime calculation APIs are available.
-    return $metrics;
   }
 
   /**
@@ -3588,19 +3009,25 @@ SQL,
       $this->database->delete('ms_fact_donation_snapshot')
         ->condition('snapshot_id', $snapshot_id)
         ->execute();
-      $this->database->delete('ms_fact_event_type_snapshot')
-        ->condition('snapshot_id', $snapshot_id)
-        ->execute();
       $this->database->delete('ms_fact_survey_snapshot')
-        ->condition('snapshot_id', $snapshot_id)
-        ->execute();
-      $this->database->delete('ms_fact_event_snapshot')
         ->condition('snapshot_id', $snapshot_id)
         ->execute();
       $this->database->delete('ms_fact_kpi_snapshot')
         ->condition('snapshot_id', $snapshot_id)
         ->execute();
       $this->database->delete('ms_fact_membership_type_snapshot')
+        ->condition('snapshot_id', $snapshot_id)
+        ->execute();
+      $this->database->delete('ms_fact_revenue_snapshot')
+        ->condition('snapshot_id', $snapshot_id)
+        ->execute();
+      $this->database->delete('ms_fact_storage_snapshot')
+        ->condition('snapshot_id', $snapshot_id)
+        ->execute();
+      $this->database->delete('ms_fact_certification_snapshot')
+        ->condition('snapshot_id', $snapshot_id)
+        ->execute();
+      $this->database->delete('ms_fact_access_snapshot')
         ->condition('snapshot_id', $snapshot_id)
         ->execute();
 
@@ -3627,5 +3054,223 @@ SQL,
       return;
     }
     Cache::invalidateTags($this->cacheTagsByDefinition[$definition]);
+  }
+
+  /**
+   * Calculates MRR and member count from current Chargebee-synced payment fields.
+   */
+  protected function calculateRevenueTotals(): array {
+    $sql = <<<SQL
+SELECT
+  SUM(CASE WHEN COALESCE(cb_pause.field_chargebee_payment_pause_value, 0) = 0
+             AND COALESCE(manual_pause.field_manual_pause_value, 0) = 0
+           THEN 1 ELSE 0 END) AS active_count,
+  SUM(CASE WHEN COALESCE(cb_pause.field_chargebee_payment_pause_value, 0) = 1
+             OR COALESCE(manual_pause.field_manual_pause_value, 0) = 1
+           THEN 1 ELSE 0 END) AS paused_count,
+  SUM(CASE WHEN COALESCE(cb_pause.field_chargebee_payment_pause_value, 0) = 0
+             AND COALESCE(manual_pause.field_manual_pause_value, 0) = 0
+           THEN COALESCE(pmp.field_member_payment_monthly_value, 0) ELSE 0 END) AS active_mrr,
+  SUM(CASE WHEN COALESCE(cb_pause.field_chargebee_payment_pause_value, 0) = 1
+             OR COALESCE(manual_pause.field_manual_pause_value, 0) = 1
+           THEN COALESCE(pmp.field_member_payment_monthly_value, 0) ELSE 0 END) AS paused_mrr,
+  SUM(COALESCE(pmp.field_member_payment_monthly_value, 0)) AS total_mrr
+FROM users_field_data u
+INNER JOIN user__roles r ON u.uid = r.entity_id AND r.roles_target_id = 'member'
+LEFT JOIN user__field_chargebee_payment_pause cb_pause ON cb_pause.entity_id = u.uid AND cb_pause.deleted = 0
+LEFT JOIN user__field_manual_pause manual_pause ON manual_pause.entity_id = u.uid AND manual_pause.deleted = 0
+LEFT JOIN profile p ON p.uid = u.uid AND p.type = 'main'
+LEFT JOIN profile__field_member_payment_monthly pmp ON pmp.entity_id = p.profile_id AND pmp.deleted = 0
+WHERE u.status = 1
+SQL;
+
+    $record = $this->database->query($sql)->fetchAssoc();
+    $active_count = (int) ($record['active_count'] ?? 0);
+    $active_mrr = round((float) ($record['active_mrr'] ?? 0), 2);
+
+    return [
+      'active_count' => $active_count,
+      'paused_count' => (int) ($record['paused_count'] ?? 0),
+      'active_mrr' => $active_mrr,
+      'paused_mrr' => round((float) ($record['paused_mrr'] ?? 0), 2),
+      'total_mrr' => round((float) ($record['total_mrr'] ?? 0), 2),
+      'avg_monthly_active' => $active_count > 0 ? round($active_mrr / $active_count, 2) : 0.00,
+    ];
+  }
+
+  /**
+   * Calculates storage unit occupancy and MRR from storage_manager ECK entities.
+   *
+   * Returns NULL when storage_manager tables are not present.
+   */
+  protected function calculateStorageOccupancy(): ?array {
+    $schema = $this->database->schema();
+    if (!$schema->tableExists('storage_unit') || !$schema->tableExists('storage_assignment')) {
+      return NULL;
+    }
+
+    // Total units.
+    $total = (int) $this->database->select('storage_unit', 'su')
+      ->countQuery()->execute()->fetchField();
+
+    // Occupied units.
+    $oq = $this->database->select('storage_unit', 'su');
+    $oq->innerJoin('storage_unit__field_storage_status', 'ss', 'ss.entity_id = su.id AND ss.deleted = 0');
+    $oq->condition('ss.field_storage_status_value', 'occupied');
+    $occupied = (int) $oq->countQuery()->execute()->fetchField();
+
+    $vacant = $total - $occupied;
+    $occupancy_rate = $total > 0 ? round(($occupied / $total) * 100, 2) : 0.00;
+
+    // Active assignment MRR.
+    $aq = $this->database->select('storage_assignment', 'sa');
+    $aq->innerJoin(
+      'storage_assignment__field_storage_assignment_status', 'fst',
+      'fst.entity_id = sa.id AND fst.deleted = 0 AND fst.field_storage_assignment_status_value = :active',
+      [':active' => 'active']
+    );
+    $aq->leftJoin('storage_assignment__field_storage_price_snapshot', 'fprice', 'fprice.entity_id = sa.id AND fprice.deleted = 0');
+    $aq->leftJoin('storage_assignment__field_storage_complimentary', 'fcomp', 'fcomp.entity_id = sa.id AND fcomp.deleted = 0');
+    $aq->addField('fprice', 'field_storage_price_snapshot_value', 'monthly_price');
+    $aq->addField('fcomp', 'field_storage_complimentary_value', 'is_complimentary');
+
+    $billed_mrr = 0.0;
+    $complimentary_mrr = 0.0;
+    foreach ($aq->execute() as $row) {
+      $price = (float) ($row->monthly_price ?? 0);
+      if (!empty($row->is_complimentary)) {
+        $complimentary_mrr += $price;
+      }
+      else {
+        $billed_mrr += $price;
+      }
+    }
+
+    // Potential MRR from vacant units.
+    $potential_mrr = 0.0;
+    if ($schema->tableExists('storage_unit__field_storage_type') && $schema->tableExists('taxonomy_term__field_monthly_price')) {
+      $vq = $this->database->select('storage_unit', 'su');
+      $vq->leftJoin('storage_unit__field_storage_status', 'ss', 'ss.entity_id = su.id AND ss.deleted = 0');
+      $vq->leftJoin('storage_unit__field_storage_type', 'stype', 'stype.entity_id = su.id AND stype.deleted = 0');
+      $vq->leftJoin('taxonomy_term__field_monthly_price', 'tp', 'tp.entity_id = stype.field_storage_type_target_id AND tp.deleted = 0');
+      $vq->where('COALESCE(ss.field_storage_status_value, :vacant) != :occupied', [':vacant' => 'vacant', ':occupied' => 'occupied']);
+      $vq->addExpression('COALESCE(SUM(tp.field_monthly_price_value), 0)', 'potential');
+      $row = $vq->execute()->fetchAssoc();
+      $potential_mrr = round((float) ($row['potential'] ?? 0), 2);
+    }
+
+    // Active violations.
+    $active_violations = 0;
+    $violations_accrued = 0.0;
+    if ($schema->tableExists('storage_assignment__field_violation_start')) {
+      $viol_q = $this->database->select('storage_assignment', 'sa');
+      $viol_q->innerJoin(
+        'storage_assignment__field_storage_assignment_status', 'fst',
+        'fst.entity_id = sa.id AND fst.deleted = 0 AND fst.field_storage_assignment_status_value = :active',
+        [':active' => 'active']
+      );
+      $viol_q->innerJoin('storage_assignment__field_violation_start', 'fvs', 'fvs.entity_id = sa.id AND fvs.deleted = 0');
+      $viol_q->leftJoin('storage_assignment__field_violation_total_due', 'fvt', 'fvt.entity_id = sa.id AND fvt.deleted = 0');
+      $viol_q->addExpression('COUNT(sa.id)', 'vcount');
+      $viol_q->addExpression('COALESCE(SUM(fvt.field_violation_total_due_value), 0)', 'vaccrued');
+      $row = $viol_q->execute()->fetchAssoc();
+      $active_violations = (int) ($row['vcount'] ?? 0);
+      $violations_accrued = round((float) ($row['vaccrued'] ?? 0), 2);
+    }
+
+    return [
+      'units_total' => $total,
+      'units_occupied' => $occupied,
+      'units_vacant' => $vacant,
+      'occupancy_rate' => $occupancy_rate,
+      'billed_mrr' => round($billed_mrr, 2),
+      'complimentary_mrr' => round($complimentary_mrr, 2),
+      'total_mrr' => round($billed_mrr + $complimentary_mrr, 2),
+      'potential_mrr' => $potential_mrr,
+      'active_violations' => $active_violations,
+      'violations_accrued' => $violations_accrued,
+    ];
+  }
+
+  /**
+   * Calculates active and pending badge certification counts by badge type.
+   *
+   * Returns an empty array when badge_request node tables are not present.
+   */
+  protected function calculateMemberCertifications(): array {
+    if (!$this->database->schema()->tableExists('node__field_badge_requested')) {
+      return [];
+    }
+
+    $sql = <<<SQL
+SELECT
+  br.field_badge_requested_target_id AS badge_tid,
+  td.name AS badge_name,
+  bs.field_badge_status_value AS status,
+  COUNT(DISTINCT fm.field_member_to_badge_target_id) AS member_count
+FROM node n
+INNER JOIN node__field_badge_requested br ON br.entity_id = n.nid AND br.deleted = 0
+INNER JOIN node__field_badge_status bs ON bs.entity_id = n.nid AND bs.deleted = 0
+INNER JOIN node__field_member_to_badge fm ON fm.entity_id = n.nid AND fm.deleted = 0
+INNER JOIN taxonomy_term_field_data td ON td.tid = br.field_badge_requested_target_id
+WHERE n.type = 'badge_request'
+  AND bs.field_badge_status_value IN ('active', 'pending')
+GROUP BY br.field_badge_requested_target_id, td.name, bs.field_badge_status_value
+ORDER BY td.name, bs.field_badge_status_value
+SQL;
+
+    $rawRows = $this->database->query($sql)->fetchAll(\PDO::FETCH_ASSOC);
+    $byBadge = [];
+    foreach ($rawRows as $row) {
+      $tid = (int) $row['badge_tid'];
+      if (!isset($byBadge[$tid])) {
+        $byBadge[$tid] = [
+          'badge_tid' => $tid,
+          'badge_name' => (string) $row['badge_name'],
+          'active_count' => 0,
+          'pending_count' => 0,
+        ];
+      }
+      if ($row['status'] === 'active') {
+        $byBadge[$tid]['active_count'] = (int) $row['member_count'];
+      }
+      elseif ($row['status'] === 'pending') {
+        $byBadge[$tid]['pending_count'] = (int) $row['member_count'];
+      }
+    }
+
+    return array_values($byBadge);
+  }
+
+  /**
+   * Calculates the count of members with an active door access badge.
+   *
+   * Returns NULL when unifi_access_sync is not configured or badge tables are absent.
+   */
+  protected function calculateActiveAccessGrants(): ?array {
+    if (!$this->database->schema()->tableExists('node__field_badge_requested')) {
+      return NULL;
+    }
+
+    $doorTermId = (int) $this->configFactory->get('unifi_access_sync.settings')->get('door_term_id');
+    if (!$doorTermId) {
+      return NULL;
+    }
+
+    $query = $this->database->select('node', 'n');
+    $query->innerJoin('node__field_badge_requested', 'br', 'br.entity_id = n.nid AND br.deleted = 0');
+    $query->innerJoin('node__field_badge_status', 'bs', 'bs.entity_id = n.nid AND bs.deleted = 0');
+    $query->innerJoin('node__field_member_to_badge', 'fm', 'fm.entity_id = n.nid AND fm.deleted = 0');
+    $query->condition('n.type', 'badge_request');
+    $query->condition('br.field_badge_requested_target_id', $doorTermId);
+    $query->condition('bs.field_badge_status_value', 'active');
+    $query->addExpression('COUNT(DISTINCT fm.field_member_to_badge_target_id)', 'grant_count');
+
+    $count = (int) $query->execute()->fetchField();
+
+    return [
+      'door_badge_tid' => $doorTermId,
+      'active_grants' => $count,
+    ];
   }
 }

@@ -131,13 +131,14 @@ class MakerspaceSnapshotCommands extends DrushCommands {
       'ms_fact_plan_snapshot',
       'ms_fact_donation_snapshot',
       'ms_fact_donation_range_snapshot',
-      'ms_fact_event_type_snapshot',
       'ms_fact_survey_snapshot',
-      'ms_fact_tool_uptime_snapshot',
-      'ms_fact_event_snapshot',
       'ms_fact_kpi_snapshot',
       'ms_fact_membership_type_snapshot',
       'ms_fact_membership_activity',
+      'ms_fact_revenue_snapshot',
+      'ms_fact_storage_snapshot',
+      'ms_fact_certification_snapshot',
+      'ms_fact_access_snapshot',
     ];
 
     $schema = $this->db->schema();

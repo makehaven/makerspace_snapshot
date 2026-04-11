@@ -85,18 +85,6 @@ function makerspace_snapshot_schema() {
     'primary key' => ['snapshot_id'],
   ];
 
-  $schema['ms_fact_event_snapshot'] = [
-    'description' => 'Event registration metrics.',
-    'fields' => [
-      'snapshot_id' => ['type' => 'int', 'not null' => TRUE],
-      'event_id' => ['type' => 'int', 'not null' => TRUE],
-      'event_title' => ['type' => 'varchar', 'length' => 255, 'not null' => TRUE],
-      'event_start_date' => ['type' => 'varchar', 'length' => 255, 'not null' => TRUE],
-      'registration_count' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
-    ],
-    'primary key' => ['snapshot_id', 'event_id'],
-  ];
-
   $schema['ms_fact_kpi_snapshot'] = [
     'description' => 'KPI metrics collected during snapshot runs.',
     'fields' => [
@@ -155,26 +143,6 @@ function makerspace_snapshot_schema() {
     ],
   ];
 
-  $schema['ms_fact_event_type_snapshot'] = [
-    'description' => 'Aggregated event metrics grouped by event type for each snapshot.',
-    'fields' => [
-      'snapshot_id' => ['type' => 'int', 'not null' => TRUE],
-      'period_year' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
-      'period_month' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
-      'period_quarter' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
-      'event_type_id' => ['type' => 'int', 'not null' => FALSE],
-      'event_type_label' => ['type' => 'varchar', 'length' => 255, 'not null' => TRUE, 'default' => 'Unknown'],
-      'events_count' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
-      'participant_count' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
-      'total_amount' => ['type' => 'numeric', 'precision' => 18, 'scale' => 2, 'not null' => TRUE, 'default' => '0.00'],
-      'average_ticket' => ['type' => 'numeric', 'precision' => 18, 'scale' => 2, 'not null' => TRUE, 'default' => '0.00'],
-    ],
-    'primary key' => ['snapshot_id', 'event_type_label'],
-    'indexes' => [
-      'period_idx' => ['period_year', 'period_quarter', 'period_month'],
-    ],
-  ];
-
   $schema['ms_fact_survey_snapshot'] = [
     'description' => 'Annual survey metrics aggregated per snapshot.',
     'fields' => [
@@ -201,24 +169,61 @@ function makerspace_snapshot_schema() {
     ],
   ];
 
-  $schema['ms_fact_tool_uptime_snapshot'] = [
-    'description' => 'Tool availability metrics aggregated per snapshot.',
+  $schema['ms_fact_revenue_snapshot'] = [
+    'description' => 'MRR aggregated from member payment fields at snapshot time.',
     'fields' => [
       'snapshot_id' => ['type' => 'int', 'not null' => TRUE],
-      'period_year' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
-      'period_month' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
-      'period_day' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
-      'total_tools' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
-      'available_tools' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
-      'down_tools' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
-      'maintenance_tools' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
-      'unknown_tools' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
-      'availability_percent' => ['type' => 'numeric', 'precision' => 6, 'scale' => 2, 'not null' => TRUE, 'default' => '0.00'],
+      'active_count' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'paused_count' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'active_mrr' => ['type' => 'numeric', 'precision' => 18, 'scale' => 2, 'not null' => TRUE, 'default' => '0.00'],
+      'paused_mrr' => ['type' => 'numeric', 'precision' => 18, 'scale' => 2, 'not null' => TRUE, 'default' => '0.00'],
+      'total_mrr' => ['type' => 'numeric', 'precision' => 18, 'scale' => 2, 'not null' => TRUE, 'default' => '0.00'],
+      'avg_monthly_active' => ['type' => 'numeric', 'precision' => 10, 'scale' => 2, 'not null' => TRUE, 'default' => '0.00'],
     ],
     'primary key' => ['snapshot_id'],
-    'indexes' => [
-      'period_idx' => ['period_year', 'period_month', 'period_day'],
+  ];
+
+  $schema['ms_fact_storage_snapshot'] = [
+    'description' => 'Storage unit occupancy and MRR at snapshot time.',
+    'fields' => [
+      'snapshot_id' => ['type' => 'int', 'not null' => TRUE],
+      'units_total' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'units_occupied' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'units_vacant' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'occupancy_rate' => ['type' => 'numeric', 'precision' => 6, 'scale' => 2, 'not null' => TRUE, 'default' => '0.00'],
+      'billed_mrr' => ['type' => 'numeric', 'precision' => 18, 'scale' => 2, 'not null' => TRUE, 'default' => '0.00'],
+      'complimentary_mrr' => ['type' => 'numeric', 'precision' => 18, 'scale' => 2, 'not null' => TRUE, 'default' => '0.00'],
+      'total_mrr' => ['type' => 'numeric', 'precision' => 18, 'scale' => 2, 'not null' => TRUE, 'default' => '0.00'],
+      'potential_mrr' => ['type' => 'numeric', 'precision' => 18, 'scale' => 2, 'not null' => TRUE, 'default' => '0.00'],
+      'active_violations' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'violations_accrued' => ['type' => 'numeric', 'precision' => 18, 'scale' => 2, 'not null' => TRUE, 'default' => '0.00'],
     ],
+    'primary key' => ['snapshot_id'],
+  ];
+
+  $schema['ms_fact_certification_snapshot'] = [
+    'description' => 'Active and pending badge certification counts by badge type.',
+    'fields' => [
+      'snapshot_id' => ['type' => 'int', 'not null' => TRUE],
+      'badge_tid' => ['type' => 'int', 'not null' => TRUE],
+      'badge_name' => ['type' => 'varchar', 'length' => 255, 'not null' => TRUE, 'default' => ''],
+      'active_count' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'pending_count' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+    ],
+    'primary key' => ['snapshot_id', 'badge_tid'],
+    'indexes' => [
+      'badge_idx' => ['badge_tid'],
+    ],
+  ];
+
+  $schema['ms_fact_access_snapshot'] = [
+    'description' => 'Count of members with active door access badges at snapshot time.',
+    'fields' => [
+      'snapshot_id' => ['type' => 'int', 'not null' => TRUE],
+      'door_badge_tid' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+      'active_grants' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+    ],
+    'primary key' => ['snapshot_id'],
   ];
 
   return $schema;
@@ -730,5 +735,36 @@ function makerspace_snapshot_update_10017() {
       'Could not add unique key def_date_source: @message. Run "drush makerspace-snapshot:dedupe --apply" to remove duplicates first, then re-run updates.',
       ['@message' => $e->getMessage()]
     );
+  }
+}
+
+/**
+ * Create new ephemeral-state fact tables: revenue, storage, certifications, access.
+ */
+function makerspace_snapshot_update_10019() {
+  $schema = \Drupal::database()->schema();
+  $definitions = makerspace_snapshot_schema();
+
+  foreach (['ms_fact_revenue_snapshot', 'ms_fact_storage_snapshot', 'ms_fact_certification_snapshot', 'ms_fact_access_snapshot'] as $table) {
+    if (!$schema->tableExists($table)) {
+      $schema->createTable($table, $definitions[$table]);
+    }
+  }
+}
+
+/**
+ * Drop obsolete event and tool fact tables.
+ *
+ * These datasets were reconstructable from CiviCRM logs at any point in time
+ * and were not consumed by the makerspace_dashboard. Removing them to keep
+ * snapshots focused on truly ephemeral Drupal state.
+ */
+function makerspace_snapshot_update_10018() {
+  $schema = \Drupal::database()->schema();
+
+  foreach (['ms_fact_event_snapshot', 'ms_fact_event_type_snapshot', 'ms_fact_tool_uptime_snapshot'] as $table) {
+    if ($schema->tableExists($table)) {
+      $schema->dropTable($table);
+    }
   }
 }

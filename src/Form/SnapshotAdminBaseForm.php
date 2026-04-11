@@ -334,18 +334,16 @@ abstract class SnapshotAdminBaseForm extends FormBase {
     $supported = [
       'membership_totals',
       'plan_levels',
-      'event_registrations',
       'membership_types',
       'membership_type_joins',
       'membership_type_cancels',
       'donation_metrics',
       'donation_range_metrics',
-      'event_type_metrics',
-      'event_type_counts',
-      'event_type_registrations',
-      'event_type_revenue',
       'survey_metrics',
-      'tool_availability',
+      'revenue_totals',
+      'storage_occupancy',
+      'member_certifications',
+      'active_access_grants',
     ];
 
     $definitions = $this->snapshotService->buildDefinitions();
@@ -417,14 +415,13 @@ abstract class SnapshotAdminBaseForm extends FormBase {
         ],
         'open' => FALSE,
       ],
-      'events' => [
-        'label' => $this->t('Event datasets'),
+      'operational' => [
+        'label' => $this->t('Operational datasets'),
         'definitions' => [
-          'event_registrations',
-          'event_type_metrics',
-          'event_type_counts',
-          'event_type_registrations',
-          'event_type_revenue',
+          'revenue_totals',
+          'storage_occupancy',
+          'member_certifications',
+          'active_access_grants',
         ],
         'open' => FALSE,
       ],

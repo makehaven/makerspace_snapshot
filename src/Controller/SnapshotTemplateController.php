@@ -79,8 +79,6 @@ class SnapshotTemplateController extends ControllerBase {
     switch ($definition) {
       case 'membership_totals':
         return ['2025-01-01', 100, 10, 5, 110, 12, 4, 8];
-      case 'event_registrations':
-        return ['2025-01-01', 123, 'Intro to Woodworking', '2025-01-15', 12];
       case 'plan_levels':
         $definitions = $this->snapshotService->buildDefinitions();
         $headers = $definitions['plan_levels']['headers'] ?? ['snapshot_date'];
@@ -125,8 +123,6 @@ class SnapshotTemplateController extends ControllerBase {
           }
         }
         return $example;
-      case 'event_type_metrics':
-        return ['2025-01-01', 2025, 1, 1, 5, 'Workshops', 3, 150, 4200.75, 28.01];
       case 'donation_metrics':
         return [
           '2025-01-01',
@@ -158,21 +154,6 @@ class SnapshotTemplateController extends ControllerBase {
           15,
           850.00,
         ];
-      case 'event_type_counts':
-      case 'event_type_registrations':
-      case 'event_type_revenue':
-        $definitions = $this->snapshotService->buildDefinitions();
-        $headers = $definitions[$definition]['headers'] ?? ['snapshot_date'];
-        $example = [];
-        foreach ($headers as $header) {
-          if ($header === 'snapshot_date') {
-            $example[] = '2025-01-01';
-          }
-          else {
-            $example[] = $definition === 'event_type_revenue' ? 0.0 : 0;
-          }
-        }
-        return $example;
       case 'survey_metrics':
         return [
           '2025-01-01',
