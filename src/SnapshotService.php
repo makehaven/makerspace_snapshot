@@ -3101,95 +3101,119 @@ SQL;
   /**
    * Calculates storage unit occupancy and MRR from storage_manager ECK entities.
    *
-   * Returns NULL when storage_manager tables are not present.
+   * Returns NULL when storage_manager tables are not present or when any
+   * required field table is missing (partial dev-environment schemas).
+   * Any unexpected query error is logged and treated as a soft failure so
+   * the broader snapshot run can continue.
    */
   protected function calculateStorageOccupancy(): ?array {
     $schema = $this->database->schema();
-    if (!$schema->tableExists('storage_unit') || !$schema->tableExists('storage_assignment')) {
-      return NULL;
-    }
 
-    // Total units.
-    $total = (int) $this->database->select('storage_unit', 'su')
-      ->countQuery()->execute()->fetchField();
-
-    // Occupied units.
-    $oq = $this->database->select('storage_unit', 'su');
-    $oq->innerJoin('storage_unit__field_storage_status', 'ss', 'ss.entity_id = su.id AND ss.deleted = 0');
-    $oq->condition('ss.field_storage_status_value', 'occupied');
-    $occupied = (int) $oq->countQuery()->execute()->fetchField();
-
-    $vacant = $total - $occupied;
-    $occupancy_rate = $total > 0 ? round(($occupied / $total) * 100, 2) : 0.00;
-
-    // Active assignment MRR.
-    $aq = $this->database->select('storage_assignment', 'sa');
-    $aq->innerJoin(
-      'storage_assignment__field_storage_assignment_status', 'fst',
-      'fst.entity_id = sa.id AND fst.deleted = 0 AND fst.field_storage_assignment_status_value = :active',
-      [':active' => 'active']
-    );
-    $aq->leftJoin('storage_assignment__field_storage_price_snapshot', 'fprice', 'fprice.entity_id = sa.id AND fprice.deleted = 0');
-    $aq->leftJoin('storage_assignment__field_storage_complimentary', 'fcomp', 'fcomp.entity_id = sa.id AND fcomp.deleted = 0');
-    $aq->addField('fprice', 'field_storage_price_snapshot_value', 'monthly_price');
-    $aq->addField('fcomp', 'field_storage_complimentary_value', 'is_complimentary');
-
-    $billed_mrr = 0.0;
-    $complimentary_mrr = 0.0;
-    foreach ($aq->execute() as $row) {
-      $price = (float) ($row->monthly_price ?? 0);
-      if (!empty($row->is_complimentary)) {
-        $complimentary_mrr += $price;
-      }
-      else {
-        $billed_mrr += $price;
+    // Base tables + field tables that are joined unconditionally below.
+    $requiredTables = [
+      'storage_unit',
+      'storage_assignment',
+      'storage_unit__field_storage_status',
+      'storage_assignment__field_storage_assignment_status',
+      'storage_assignment__field_storage_price_snapshot',
+      'storage_assignment__field_storage_complimentary',
+    ];
+    foreach ($requiredTables as $table) {
+      if (!$schema->tableExists($table)) {
+        return NULL;
       }
     }
 
-    // Potential MRR from vacant units.
-    $potential_mrr = 0.0;
-    if ($schema->tableExists('storage_unit__field_storage_type') && $schema->tableExists('taxonomy_term__field_monthly_price')) {
-      $vq = $this->database->select('storage_unit', 'su');
-      $vq->leftJoin('storage_unit__field_storage_status', 'ss', 'ss.entity_id = su.id AND ss.deleted = 0');
-      $vq->leftJoin('storage_unit__field_storage_type', 'stype', 'stype.entity_id = su.id AND stype.deleted = 0');
-      $vq->leftJoin('taxonomy_term__field_monthly_price', 'tp', 'tp.entity_id = stype.field_storage_type_target_id AND tp.deleted = 0');
-      $vq->where('COALESCE(ss.field_storage_status_value, :vacant) != :occupied', [':vacant' => 'vacant', ':occupied' => 'occupied']);
-      $vq->addExpression('COALESCE(SUM(tp.field_monthly_price_value), 0)', 'potential');
-      $row = $vq->execute()->fetchAssoc();
-      $potential_mrr = round((float) ($row['potential'] ?? 0), 2);
-    }
+    try {
+      // Total units.
+      $total = (int) $this->database->select('storage_unit', 'su')
+        ->countQuery()->execute()->fetchField();
 
-    // Active violations.
-    $active_violations = 0;
-    $violations_accrued = 0.0;
-    if ($schema->tableExists('storage_assignment__field_violation_start')) {
-      $viol_q = $this->database->select('storage_assignment', 'sa');
-      $viol_q->innerJoin(
+      // Occupied units.
+      $oq = $this->database->select('storage_unit', 'su');
+      $oq->innerJoin('storage_unit__field_storage_status', 'ss', 'ss.entity_id = su.id AND ss.deleted = 0');
+      $oq->condition('ss.field_storage_status_value', 'occupied');
+      $occupied = (int) $oq->countQuery()->execute()->fetchField();
+
+      $vacant = $total - $occupied;
+      $occupancy_rate = $total > 0 ? round(($occupied / $total) * 100, 2) : 0.00;
+
+      // Active assignment MRR.
+      $aq = $this->database->select('storage_assignment', 'sa');
+      $aq->innerJoin(
         'storage_assignment__field_storage_assignment_status', 'fst',
         'fst.entity_id = sa.id AND fst.deleted = 0 AND fst.field_storage_assignment_status_value = :active',
         [':active' => 'active']
       );
-      $viol_q->innerJoin('storage_assignment__field_violation_start', 'fvs', 'fvs.entity_id = sa.id AND fvs.deleted = 0');
-      $viol_q->leftJoin('storage_assignment__field_violation_total_due', 'fvt', 'fvt.entity_id = sa.id AND fvt.deleted = 0');
-      $viol_q->addExpression('COUNT(sa.id)', 'vcount');
-      $viol_q->addExpression('COALESCE(SUM(fvt.field_violation_total_due_value), 0)', 'vaccrued');
-      $row = $viol_q->execute()->fetchAssoc();
-      $active_violations = (int) ($row['vcount'] ?? 0);
-      $violations_accrued = round((float) ($row['vaccrued'] ?? 0), 2);
-    }
+      $aq->leftJoin('storage_assignment__field_storage_price_snapshot', 'fprice', 'fprice.entity_id = sa.id AND fprice.deleted = 0');
+      $aq->leftJoin('storage_assignment__field_storage_complimentary', 'fcomp', 'fcomp.entity_id = sa.id AND fcomp.deleted = 0');
+      $aq->addField('fprice', 'field_storage_price_snapshot_value', 'monthly_price');
+      $aq->addField('fcomp', 'field_storage_complimentary_value', 'is_complimentary');
 
-    return [
-      'units_total' => $total,
-      'units_occupied' => $occupied,
-      'units_vacant' => $vacant,
-      'occupancy_rate' => $occupancy_rate,
-      'billed_mrr' => round($billed_mrr, 2),
-      'complimentary_mrr' => round($complimentary_mrr, 2),
-      'total_mrr' => round($billed_mrr + $complimentary_mrr, 2),
-      'potential_mrr' => $potential_mrr,
-      'active_violations' => $active_violations,
-      'violations_accrued' => $violations_accrued,
-    ];
+      $billed_mrr = 0.0;
+      $complimentary_mrr = 0.0;
+      foreach ($aq->execute() as $row) {
+        $price = (float) ($row->monthly_price ?? 0);
+        if (!empty($row->is_complimentary)) {
+          $complimentary_mrr += $price;
+        }
+        else {
+          $billed_mrr += $price;
+        }
+      }
+
+      // Potential MRR from vacant units.
+      $potential_mrr = 0.0;
+      if ($schema->tableExists('storage_unit__field_storage_type') && $schema->tableExists('taxonomy_term__field_monthly_price')) {
+        $vq = $this->database->select('storage_unit', 'su');
+        $vq->leftJoin('storage_unit__field_storage_status', 'ss', 'ss.entity_id = su.id AND ss.deleted = 0');
+        $vq->leftJoin('storage_unit__field_storage_type', 'stype', 'stype.entity_id = su.id AND stype.deleted = 0');
+        $vq->leftJoin('taxonomy_term__field_monthly_price', 'tp', 'tp.entity_id = stype.field_storage_type_target_id AND tp.deleted = 0');
+        $vq->where('COALESCE(ss.field_storage_status_value, :vacant) != :occupied', [':vacant' => 'vacant', ':occupied' => 'occupied']);
+        $vq->addExpression('COALESCE(SUM(tp.field_monthly_price_value), 0)', 'potential');
+        $row = $vq->execute()->fetchAssoc();
+        $potential_mrr = round((float) ($row['potential'] ?? 0), 2);
+      }
+
+      // Active violations.
+      $active_violations = 0;
+      $violations_accrued = 0.0;
+      if (
+        $schema->tableExists('storage_assignment__field_violation_start') &&
+        $schema->tableExists('storage_assignment__field_violation_total_due')
+      ) {
+        $viol_q = $this->database->select('storage_assignment', 'sa');
+        $viol_q->innerJoin(
+          'storage_assignment__field_storage_assignment_status', 'fst',
+          'fst.entity_id = sa.id AND fst.deleted = 0 AND fst.field_storage_assignment_status_value = :active',
+          [':active' => 'active']
+        );
+        $viol_q->innerJoin('storage_assignment__field_violation_start', 'fvs', 'fvs.entity_id = sa.id AND fvs.deleted = 0');
+        $viol_q->leftJoin('storage_assignment__field_violation_total_due', 'fvt', 'fvt.entity_id = sa.id AND fvt.deleted = 0');
+        $viol_q->addExpression('COUNT(sa.id)', 'vcount');
+        $viol_q->addExpression('COALESCE(SUM(fvt.field_violation_total_due_value), 0)', 'vaccrued');
+        $row = $viol_q->execute()->fetchAssoc();
+        $active_violations = (int) ($row['vcount'] ?? 0);
+        $violations_accrued = round((float) ($row['vaccrued'] ?? 0), 2);
+      }
+
+      return [
+        'units_total' => $total,
+        'units_occupied' => $occupied,
+        'units_vacant' => $vacant,
+        'occupancy_rate' => $occupancy_rate,
+        'billed_mrr' => round($billed_mrr, 2),
+        'complimentary_mrr' => round($complimentary_mrr, 2),
+        'total_mrr' => round($billed_mrr + $complimentary_mrr, 2),
+        'potential_mrr' => $potential_mrr,
+        'active_violations' => $active_violations,
+        'violations_accrued' => $violations_accrued,
+      ];
+    }
+    catch (\Exception $e) {
+      $this->logger->warning('Storage occupancy calculation failed, skipping: @message', ['@message' => $e->getMessage()]);
+      return NULL;
+    }
   }
 
   /**
