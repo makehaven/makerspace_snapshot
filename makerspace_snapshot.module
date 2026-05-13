@@ -20,51 +20,75 @@ function makerspace_snapshot_cron() {
   $should_run = FALSE;
   $snapshot_type = '';
 
+  // For monthly/quarterly/annually, fall back to "any day this period if no
+  // snapshot yet exists for it." Otherwise a missed cron run on the 1st (server
+  // downtime, deploy in progress, queue backlog) loses the period forever.
+  /** @var \Drupal\makerspace_snapshot\SnapshotService $snapshotService */
+  $snapshotService = \Drupal::service('makerspace_snapshot.snapshot_service');
+  $firstOfMonth = (clone $now)->modify('first day of this month')->format('Y-m-d');
+
   switch ($interval) {
     case 'daily':
       $should_run = TRUE;
       $snapshot_type = 'daily';
       break;
     case 'monthly':
-      if ($now->format('j') === '1') {
+      if ($now->format('j') === '1' || !$snapshotService->snapshotExists('monthly', $firstOfMonth, 'automatic_cron')) {
         $should_run = TRUE;
         $snapshot_type = 'monthly';
       }
       break;
     case 'quarterly':
-      if (in_array($now->format('n'), [1, 4, 7, 10]) && $now->format('j') === '1') {
-        $should_run = TRUE;
-        $snapshot_type = 'quarterly';
+      if (in_array($now->format('n'), [1, 4, 7, 10])) {
+        $quarterStart = (clone $now)->modify('first day of this month')->format('Y-m-d');
+        if ($now->format('j') === '1' || !$snapshotService->snapshotExists('quarterly', $quarterStart, 'automatic_cron')) {
+          $should_run = TRUE;
+          $snapshot_type = 'quarterly';
+        }
       }
       break;
     case 'annually':
-      if ($now->format('n') === '1' && $now->format('j') === '1') {
-        $should_run = TRUE;
-        $snapshot_type = 'annually';
+      if ($now->format('n') === '1') {
+        $yearStart = (clone $now)->modify('first day of January')->format('Y-m-d');
+        if ($now->format('j') === '1' || !$snapshotService->snapshotExists('annually', $yearStart, 'automatic_cron')) {
+          $should_run = TRUE;
+          $snapshot_type = 'annually';
+        }
       }
       break;
   }
 
   if ($should_run) {
-    // Use the run date as the snapshot anchor so monthly snapshots taken on
-    // the first of the month are stored as that month (for example 2026-02-01).
+    // Anchor monthly/quarterly/annually snapshots to the first day of the
+    // current period regardless of which day cron actually ran. Without this,
+    // a missed-1st catch-up run on day N would create a snapshot dated day N,
+    // and a subsequent same-period run would think no snapshot exists yet.
     $snapshot_date = $now->format('Y-m-d');
-    // Period-based metrics should use the completed period prior to the run.
-    // Derive from the snapshot date (always first of month) so delayed cron
-    // still captures the correct full prior period.
+    if ($snapshot_type === 'monthly') {
+      $snapshot_date = (clone $now)->modify('first day of this month')->format('Y-m-d');
+    }
+    elseif ($snapshot_type === 'quarterly') {
+      $month = (int) $now->format('n');
+      $quarterStartMonth = (intdiv($month - 1, 3) * 3) + 1;
+      $snapshot_date = sprintf('%s-%02d-01', $now->format('Y'), $quarterStartMonth);
+    }
+    elseif ($snapshot_type === 'annually') {
+      $snapshot_date = (clone $now)->modify('first day of January')->format('Y-m-d');
+    }
+
+    // Period-based metrics should use the completed period prior to the
+    // snapshot anchor so the row reflects a full period.
     $period_reference_date = $snapshot_date;
     if (in_array($snapshot_type, ['monthly', 'quarterly', 'annually'], TRUE)) {
-      $first_of_month = (new DrupalDateTime($snapshot_date))->modify('first day of this month');
-      $period_reference_date = $first_of_month->modify('-1 day')->format('Y-m-d');
+      $period_reference_date = (new DrupalDateTime($snapshot_date))->modify('-1 day')->format('Y-m-d');
     }
-    /** @var \Drupal\makerspace_snapshot\SnapshotService $snapshotService */
-    $snapshotService = \Drupal::service('makerspace_snapshot.snapshot_service');
+
     if ($snapshotService->snapshotExists($snapshot_type, $snapshot_date, 'automatic_cron')) {
       \Drupal::logger('makerspace_snapshot')->notice(
         'Skipped duplicate automatic @type snapshot for @date.',
         [
           '@type' => $snapshot_type,
-          '@date' => (new DrupalDateTime($snapshot_date))->format('Y-m-01'),
+          '@date' => $snapshot_date,
         ]
       );
       return;
