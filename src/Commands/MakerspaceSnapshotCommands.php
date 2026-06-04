@@ -49,38 +49,43 @@ class MakerspaceSnapshotCommands extends DrushCommands {
   /**
    * Find and optionally remove duplicate snapshot rows.
    *
-   * Keeps the most recently created row for each
+   * By default keeps the most recently created row for each
    * definition+snapshot_type+snapshot_date+source tuple and removes older rows.
    *
+   * With --cross-source, collapses across sources too: each
+   * definition+snapshot_type+snapshot_date keeps a single row chosen by the
+   * canonical source preference (automatic_cron > manual_form > manual_drush >
+   * system), tie-broken on created_at then id. This is what removes a manual
+   * backfill that shadows a real cron row for the same month. --cross-source
+   * ignores the --source filter (it must see every source to compare them).
+   *
    * @command makerspace-snapshot:dedupe
-   * @option source Filter by source (default automatic_cron).
+   * @option source Filter by source (default automatic_cron; ignored with --cross-source).
    * @option snapshot-type Filter by snapshot type (default monthly).
    * @option snapshot-date Optional exact snapshot date (YYYY-MM-DD).
+   * @option cross-source Collapse across sources using source preference.
    * @option apply Apply deletions. Omit for dry-run.
    * @usage drush makerspace-snapshot:dedupe
    * @usage drush makerspace-snapshot:dedupe --source=automatic_cron --snapshot-type=monthly --apply
+   * @usage drush makerspace-snapshot:dedupe --cross-source --snapshot-type=monthly --apply
    */
   public function dedupe(array $args, array $options = [
     'source' => 'automatic_cron',
     'snapshot-type' => 'monthly',
     'snapshot-date' => NULL,
+    'cross-source' => FALSE,
     'apply' => FALSE,
   ]): void {
+    $crossSource = !empty($options['cross-source']);
     $source = (string) ($options['source'] ?? 'automatic_cron');
     $snapshotType = (string) ($options['snapshot-type'] ?? 'monthly');
     $snapshotDate = $options['snapshot-date'] ?? NULL;
     $apply = !empty($options['apply']);
 
     $query = $this->db->select('ms_snapshot', 's')
-      ->fields('s', ['id', 'definition', 'snapshot_type', 'snapshot_date', 'source', 'created_at'])
-      ->orderBy('definition', 'ASC')
-      ->orderBy('snapshot_type', 'ASC')
-      ->orderBy('snapshot_date', 'ASC')
-      ->orderBy('source', 'ASC')
-      ->orderBy('created_at', 'DESC')
-      ->orderBy('id', 'DESC');
+      ->fields('s', ['id', 'definition', 'snapshot_type', 'snapshot_date', 'source', 'created_at']);
 
-    if ($source !== '') {
+    if (!$crossSource && $source !== '') {
       $query->condition('source', $source);
     }
     if ($snapshotType !== '') {
@@ -92,21 +97,46 @@ class MakerspaceSnapshotCommands extends DrushCommands {
 
     $rows = $query->execute()->fetchAllAssoc('id');
 
+    // For each grouping key, keep exactly one row. When collapsing across
+    // sources the winner is the most trustworthy source; otherwise rows are
+    // already source-scoped and the newest one wins.
     $keepByKey = [];
     $deleteIds = [];
     foreach ($rows as $row) {
-      $key = implode('|', [
+      $keyParts = [
         (string) $row->definition,
         (string) $row->snapshot_type,
         (string) $row->snapshot_date,
-        (string) $row->source,
-      ]);
+      ];
+      if (!$crossSource) {
+        $keyParts[] = (string) $row->source;
+      }
+      $key = implode('|', $keyParts);
 
-      if (!isset($keepByKey[$key])) {
-        $keepByKey[$key] = (int) $row->id;
+      $candidate = [
+        'id' => (int) $row->id,
+        'rank' => $crossSource ? SnapshotService::sourceRank($row->source) : 0,
+        'created_at' => (int) $row->created_at,
+      ];
+
+      $incumbent = $keepByKey[$key] ?? NULL;
+      if ($incumbent === NULL) {
+        $keepByKey[$key] = $candidate;
         continue;
       }
-      $deleteIds[] = (int) $row->id;
+
+      // Candidate wins on better source, then newer created_at, then higher id.
+      $candidateWins = $candidate['rank'] < $incumbent['rank']
+        || ($candidate['rank'] === $incumbent['rank'] && $candidate['created_at'] > $incumbent['created_at'])
+        || ($candidate['rank'] === $incumbent['rank'] && $candidate['created_at'] === $incumbent['created_at'] && $candidate['id'] > $incumbent['id']);
+
+      if ($candidateWins) {
+        $deleteIds[] = $incumbent['id'];
+        $keepByKey[$key] = $candidate;
+      }
+      else {
+        $deleteIds[] = $candidate['id'];
+      }
     }
 
     if (empty($deleteIds)) {

@@ -98,6 +98,40 @@ class SnapshotService {
   ];
 
   /**
+   * Snapshot source preference, most trustworthy first.
+   *
+   * More than one row can exist for the same definition + type + date (e.g. an
+   * automatic cron run alongside a manual backfill or an early system test).
+   * Reads and cross-source dedupe keep exactly one using this order; lower
+   * index = preferred. automatic_cron is point-in-time accurate; manual
+   * backfills only stamp current state onto historical dates, so they lose to
+   * cron. The pre-launch "system" source is least trustworthy.
+   */
+  public const SOURCE_PREFERENCE = [
+    'automatic_cron',
+    'manual_form',
+    'manual_drush',
+    'system',
+  ];
+
+  /**
+   * Returns a numeric rank for a snapshot source; lower is more trustworthy.
+   *
+   * Unknown sources sort after every known source so a recognised source always
+   * wins. Within an equal rank, callers tie-break on created_at then id.
+   *
+   * @param string|null $source
+   *   The snapshot source machine name.
+   *
+   * @return int
+   *   Preference rank (0 = most preferred).
+   */
+  public static function sourceRank(?string $source): int {
+    $index = array_search((string) $source, self::SOURCE_PREFERENCE, TRUE);
+    return $index === FALSE ? count(self::SOURCE_PREFERENCE) : $index;
+  }
+
+  /**
    * Canonical SQL queries used to build snapshots.
    *
    * @var array
