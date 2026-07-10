@@ -96,6 +96,14 @@ function makerspace_snapshot_cron() {
 
     $snapshotService->takeSnapshot($snapshot_type, FALSE, $snapshot_date, 'automatic_cron', NULL, $period_reference_date);
   }
+
+  // After the monthly snapshot window (day 2+, so the missed-1st catch-up has
+  // had a chance to run), verify the period actually recorded completely.
+  // Snapshot failures are otherwise silent. checkAndNotify() self-limits to
+  // one report per period/fingerprint, so running on every cron is cheap.
+  if ($interval === 'monthly' && (int) $now->format('j') >= 2) {
+    \Drupal::service('makerspace_snapshot.health_monitor')->checkAndNotify($firstOfMonth);
+  }
 }
 
 /**

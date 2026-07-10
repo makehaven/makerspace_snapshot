@@ -5,7 +5,10 @@ services:
   makerspace_snapshot.snapshot_service:
     class: Drupal\makerspace_snapshot\SnapshotService
     arguments: ['@database', '@logger.channel.makerspace_snapshot', '@config.factory', '@module_handler', '@entity_type.manager']
+  makerspace_snapshot.health_monitor:
+    class: Drupal\makerspace_snapshot\Service\SnapshotHealthMonitor
+    arguments: ['@database', '@makerspace_snapshot.snapshot_service', '@config.factory', '@logger.channel.makerspace_snapshot', '@http_client', '@state']
   Drupal\makerspace_snapshot\Commands\MakerspaceSnapshotCommands:
-    arguments: ['@database', '@logger.channel.makerspace_snapshot', '@makerspace_snapshot.snapshot_service']
+    arguments: ['@database', '@logger.channel.makerspace_snapshot', '@makerspace_snapshot.snapshot_service', '@makerspace_snapshot.health_monitor']
     tags:
       - { name: drush.command }
