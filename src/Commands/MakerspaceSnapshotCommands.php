@@ -4,7 +4,9 @@ namespace Drupal\makerspace_snapshot\Commands;
 
 use Drush\Commands\DrushCommands;
 use Drupal\Core\Database\Connection;
+use Drupal\makerspace_snapshot\Service\SnapshotHealthMonitor;
 use Drupal\makerspace_snapshot\SnapshotService;
+use Psr\Log\LoggerInterface;
 
 class MakerspaceSnapshotCommands extends DrushCommands {
 
@@ -14,14 +16,48 @@ class MakerspaceSnapshotCommands extends DrushCommands {
   protected Connection $db;
 
   /**
+   * Module logger channel.
+   */
+  protected LoggerInterface $channelLogger;
+
+  /**
    * Snapshot service.
    */
   protected SnapshotService $snapshotService;
 
-  public function __construct(Connection $db, SnapshotService $snapshotService) {
+  /**
+   * Snapshot health monitor.
+   */
+  protected ?SnapshotHealthMonitor $healthMonitor;
+
+  public function __construct(Connection $db, LoggerInterface $logger, SnapshotService $snapshotService, ?SnapshotHealthMonitor $healthMonitor = NULL) {
     parent::__construct();
     $this->db = $db;
+    $this->channelLogger = $logger;
     $this->snapshotService = $snapshotService;
+    $this->healthMonitor = $healthMonitor;
+  }
+
+  /**
+   * Checks snapshot completeness and KPI sanity for a monthly period.
+   *
+   * @command makerspace-snapshot:health
+   * @option period Snapshot period to check (YYYY-MM-01). Defaults to the current month.
+   * @option notify Also report issues to the log and Slack (once per period/fingerprint).
+   * @usage drush makerspace-snapshot:health --period=2026-07-01
+   */
+  public function health(array $options = ['period' => NULL, 'notify' => FALSE]): int {
+    $monitor = $this->healthMonitor ?: \Drupal::service('makerspace_snapshot.health_monitor');
+    $period = $options['period'] ?: date('Y-m-01');
+    $issues = $options['notify'] ? $monitor->checkAndNotify($period) : $monitor->runChecks($period);
+    if (!$issues) {
+      $this->output()->writeln("Snapshot health OK for $period.");
+      return self::EXIT_SUCCESS;
+    }
+    foreach ($issues as $issue) {
+      $this->output()->writeln('WARNING: ' . $issue);
+    }
+    return self::EXIT_FAILURE;
   }
 
   /**
