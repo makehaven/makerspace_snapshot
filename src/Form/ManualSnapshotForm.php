@@ -93,7 +93,10 @@ class ManualSnapshotForm extends SnapshotAdminBaseForm {
       $selected_definitions = $available_definition_keys;
     }
 
-    $this->snapshotService->takeSnapshot($snapshot_type, $is_test, NULL, 'manual_form', $selected_definitions);
+    if (!$this->snapshotService->takeSnapshot($snapshot_type, $is_test, NULL, 'manual_form', $selected_definitions)) {
+      $this->messenger()->addError($this->t('Snapshot failed. No partial changes were saved; review the snapshot log before retrying.'));
+      return;
+    }
 
     $this->messenger()->deleteAll();
 

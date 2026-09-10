@@ -152,11 +152,11 @@ SELECT u.uid AS member_id,
          WHEN LOCATE('@', plan.field_user_chargebee_plan_value) > 0 THEN 'Unassigned'
          ELSE plan.field_user_chargebee_plan_value
        END AS plan_label
-FROM users_field_data u
-INNER JOIN user__roles r ON u.uid = r.entity_id AND r.roles_target_id = 'member'
-LEFT JOIN user__field_chargebee_payment_pause cb_pause ON cb_pause.entity_id = u.uid AND cb_pause.deleted = 0
-LEFT JOIN user__field_manual_pause manual_pause ON manual_pause.entity_id = u.uid AND manual_pause.deleted = 0
-LEFT JOIN user__field_user_chargebee_plan plan ON plan.entity_id = u.uid AND plan.deleted = 0
+FROM {users_field_data} u
+INNER JOIN {user__roles} r ON u.uid = r.entity_id AND r.roles_target_id = 'member'
+LEFT JOIN {user__field_chargebee_payment_pause} cb_pause ON cb_pause.entity_id = u.uid AND cb_pause.deleted = 0
+LEFT JOIN {user__field_manual_pause} manual_pause ON manual_pause.entity_id = u.uid AND manual_pause.deleted = 0
+LEFT JOIN {user__field_user_chargebee_plan} plan ON plan.entity_id = u.uid AND plan.deleted = 0
 WHERE u.status = 1
   AND COALESCE(cb_pause.field_chargebee_payment_pause_value, 0) = 0
   AND COALESCE(manual_pause.field_manual_pause_value, 0) = 0
@@ -177,11 +177,11 @@ SELECT u.uid AS member_id,
          WHEN LOCATE('@', plan.field_user_chargebee_plan_value) > 0 THEN 'Unassigned (Paused)'
          ELSE CONCAT(plan.field_user_chargebee_plan_value, ' (Paused)')
        END AS plan_label
-FROM users_field_data u
-INNER JOIN user__roles r ON u.uid = r.entity_id AND r.roles_target_id = 'member'
-LEFT JOIN user__field_chargebee_payment_pause cb_pause ON cb_pause.entity_id = u.uid AND cb_pause.deleted = 0
-LEFT JOIN user__field_manual_pause manual_pause ON manual_pause.entity_id = u.uid AND manual_pause.deleted = 0
-LEFT JOIN user__field_user_chargebee_plan plan ON plan.entity_id = u.uid AND plan.deleted = 0
+FROM {users_field_data} u
+INNER JOIN {user__roles} r ON u.uid = r.entity_id AND r.roles_target_id = 'member'
+LEFT JOIN {user__field_chargebee_payment_pause} cb_pause ON cb_pause.entity_id = u.uid AND cb_pause.deleted = 0
+LEFT JOIN {user__field_manual_pause} manual_pause ON manual_pause.entity_id = u.uid AND manual_pause.deleted = 0
+LEFT JOIN {user__field_user_chargebee_plan} plan ON plan.entity_id = u.uid AND plan.deleted = 0
 WHERE u.status = 1
   AND (
     COALESCE(cb_pause.field_chargebee_payment_pause_value, 0) = 1
@@ -196,9 +196,9 @@ SQL,
 SELECT u.uid AS member_id,
        'MEMBER_LAPSED' AS plan_code,
        'Member (Lapsed)' AS plan_label
-FROM users_field_data u
+FROM {users_field_data} u
 WHERE u.uid NOT IN (
-  SELECT entity_id FROM user__roles WHERE roles_target_id = 'member'
+  SELECT entity_id FROM {user__roles} WHERE roles_target_id = 'member'
 )
 SQL,
     ],
@@ -222,10 +222,10 @@ SELECT u.uid AS member_id,
            THEN jd.field_member_join_date_value
          ELSE FROM_UNIXTIME(u.created, '%Y-%m-%d')
        END AS occurred_at
-FROM users_field_data u
-INNER JOIN profile p ON p.uid = u.uid AND p.type = 'main'
-LEFT JOIN profile__field_member_join_date jd ON jd.entity_id = p.profile_id AND jd.deleted = 0
-LEFT JOIN user__field_user_chargebee_plan plan ON plan.entity_id = u.uid AND plan.deleted = 0
+FROM {users_field_data} u
+INNER JOIN {profile} p ON p.uid = u.uid AND p.type = 'main'
+LEFT JOIN {profile__field_member_join_date} jd ON jd.entity_id = p.profile_id AND jd.deleted = 0
+LEFT JOIN {user__field_user_chargebee_plan} plan ON plan.entity_id = u.uid AND plan.deleted = 0
 WHERE (
   -- Explicit join date recorded: always trust it
   (NULLIF(jd.field_member_join_date_value, '') IS NOT NULL
@@ -234,7 +234,7 @@ WHERE (
   -- No explicit join date: use account creation date, but only for current members
   -- so we don't count event-only signups
   (NULLIF(jd.field_member_join_date_value, '') IS NULL
-   AND EXISTS (SELECT 1 FROM user__roles r WHERE r.entity_id = u.uid AND r.roles_target_id = 'member')
+   AND EXISTS (SELECT 1 FROM {user__roles} r WHERE r.entity_id = u.uid AND r.roles_target_id = 'member')
    AND u.created BETWEEN UNIX_TIMESTAMP(:start) AND UNIX_TIMESTAMP(:end))
 )
 
@@ -252,10 +252,10 @@ SELECT u.uid AS member_id,
          ELSE plan.field_user_chargebee_plan_value
        END AS plan_label,
        rd.field_member_reactivation_date_value AS occurred_at
-FROM users_field_data u
-INNER JOIN profile p ON p.uid = u.uid AND p.type = 'main'
-INNER JOIN profile__field_member_reactivation_date rd ON rd.entity_id = p.profile_id AND rd.deleted = 0
-LEFT JOIN user__field_user_chargebee_plan plan ON plan.entity_id = u.uid AND plan.deleted = 0
+FROM {users_field_data} u
+INNER JOIN {profile} p ON p.uid = u.uid AND p.type = 'main'
+INNER JOIN {profile__field_member_reactivation_date} rd ON rd.entity_id = p.profile_id AND rd.deleted = 0
+LEFT JOIN {user__field_user_chargebee_plan} plan ON plan.entity_id = u.uid AND plan.deleted = 0
 WHERE rd.field_member_reactivation_date_value
       BETWEEN DATE_FORMAT(:start, '%Y-%m-%d') AND DATE_FORMAT(:end, '%Y-%m-%d')
 SQL,
@@ -276,10 +276,10 @@ SELECT u.uid AS member_id,
          ELSE plan.field_user_chargebee_plan_value
        END AS plan_label,
        ed.field_member_end_date_value AS occurred_at
-FROM users_field_data u
-INNER JOIN profile p ON p.uid = u.uid AND p.type = 'main'
-INNER JOIN profile__field_member_end_date ed ON ed.entity_id = p.profile_id AND ed.deleted = 0
-LEFT JOIN user__field_user_chargebee_plan plan ON plan.entity_id = u.uid AND plan.deleted = 0
+FROM {users_field_data} u
+INNER JOIN {profile} p ON p.uid = u.uid AND p.type = 'main'
+INNER JOIN {profile__field_member_end_date} ed ON ed.entity_id = p.profile_id AND ed.deleted = 0
+LEFT JOIN {user__field_user_chargebee_plan} plan ON plan.entity_id = u.uid AND plan.deleted = 0
 WHERE ed.field_member_end_date_value BETWEEN DATE_FORMAT(:start, '%Y-%m-%d') AND DATE_FORMAT(:end, '%Y-%m-%d')
 SQL,
     ],
@@ -627,6 +627,208 @@ SQL,
   }
 
   /**
+   * Checks facts for one source, including legacy partial runs.
+   */
+  public function snapshotIssues(string $type, string $date, string $source = 'automatic_cron'): array {
+    $date = (new \DateTimeImmutable($date))->format('Y-m-01');
+    $rows = $this->database->select('ms_snapshot', 's')->fields('s')
+      ->condition('snapshot_type', $type)->condition('snapshot_date', $date)
+      ->condition('source', $source)->execute()->fetchAllAssoc('definition');
+    $tables = [
+      'membership_totals' => 'ms_fact_org_snapshot',
+      'plan_levels' => 'ms_fact_plan_snapshot',
+      'membership_types' => 'ms_fact_membership_type_snapshot',
+      'membership_type_joins' => 'ms_fact_membership_type_snapshot',
+      'membership_type_cancels' => 'ms_fact_membership_type_snapshot',
+      'donation_metrics' => 'ms_fact_donation_snapshot',
+      'donation_range_metrics' => 'ms_fact_donation_range_snapshot',
+      'revenue_totals' => 'ms_fact_revenue_snapshot',
+      'storage_occupancy' => 'ms_fact_storage_snapshot',
+      'member_certifications' => 'ms_fact_certification_snapshot',
+      'active_access_grants' => 'ms_fact_access_snapshot',
+    ];
+    $canBeEmpty = [
+      'plan_levels', 'membership_types', 'membership_type_joins',
+      'membership_type_cancels', 'donation_range_metrics', 'member_certifications',
+    ];
+    $issues = [];
+    foreach ($tables as $definition => $table) {
+      if (!isset($rows[$definition])) {
+        $issues[] = "Missing $definition header for $date ($source).";
+        continue;
+      }
+      $row = $rows[$definition];
+      $count = $this->database->schema()->tableExists($table)
+        ? (int) $this->database->select($table, 'f')->condition('snapshot_id', $row->id)->countQuery()->execute()->fetchField() : 0;
+      if (!$count && !(in_array($definition, $canBeEmpty, TRUE) && !empty($row->completed_at))) {
+        $issues[] = "Missing or unverified empty $definition facts for $date ($source).";
+      }
+    }
+    if (isset($rows['membership_totals']) && $this->database->schema()->tableExists('ms_fact_kpi_snapshot')) {
+      $id = $rows['membership_totals']->id;
+      $current = $this->database->select('ms_fact_kpi_snapshot', 'k')->fields('k', ['kpi_id'])
+        ->condition('snapshot_id', $id)->execute()->fetchCol();
+      $previous = $this->database->select('ms_snapshot', 's');
+      $previous->join('ms_fact_kpi_snapshot', 'k', 'k.snapshot_id = s.id');
+      $previous->addField('k', 'kpi_id');
+      $previous->condition('s.source', $source)->condition('s.snapshot_type', $type)
+        ->condition('s.definition', 'membership_totals')
+        ->condition('s.snapshot_date', (new \DateTimeImmutable($date))->modify('-1 month')->format('Y-m-d'));
+      $missing = array_diff($previous->execute()->fetchCol(), $current);
+      if (!$current) {
+        $issues[] = "No KPI detail rows for $date ($source).";
+      }
+      elseif ($missing) {
+        $issues[] = 'KPI details missing compared with prior period: ' . implode(', ', $missing) . '.';
+      }
+    }
+    elseif (isset($rows['membership_totals'])) {
+      $issues[] = 'KPI fact table is unavailable.';
+    }
+    if (isset($rows['plan_levels'], $rows['membership_totals'])
+      && $this->database->schema()->tableExists('ms_fact_plan_snapshot')
+      && $this->database->schema()->tableExists('ms_fact_org_snapshot')) {
+      $active = $this->database->select('ms_fact_org_snapshot', 'o')->fields('o', ['members_active'])
+        ->condition('snapshot_id', $rows['membership_totals']->id)->execute()->fetchField();
+      $query = $this->database->select('ms_fact_plan_snapshot', 'p');
+      $query->addExpression('SUM(count_members)');
+      $sum = $query->condition('snapshot_id', $rows['plan_levels']->id)->execute()->fetchField();
+      if ($active !== FALSE && (int) $sum !== (int) $active) {
+        $issues[] = "Plan counts do not reconcile with active membership for $date ($source).";
+      }
+    }
+    return $issues;
+  }
+
+  /**
+   * Retries today’s captures without overwriting older partial history.
+   */
+  public function automaticCaptureNeeded(string $type, string $date): bool {
+    if (!$this->snapshotExists($type, $date)) {
+      return TRUE;
+    }
+    $issues = $this->snapshotIssues($type, $date);
+    if (!$issues) {
+      return FALSE;
+    }
+    $query = $this->database->select('ms_snapshot', 's');
+    $query->addExpression('MIN(created_at)');
+    $created = $query->condition('snapshot_type', $type)
+      ->condition('snapshot_date', (new \DateTimeImmutable($date))->format('Y-m-01'))
+      ->condition('source', 'automatic_cron')->execute()->fetchField();
+    // Existing historical partial runs need the source-aware recovery command.
+    return $created && date('Y-m-d', (int) $created) === date('Y-m-d');
+  }
+
+  /**
+   * Previews or restores only historically evidenced missing facts.
+   *
+   * Existing facts are never overwritten. Mutable point-in-time values need an
+   * archived source and are deliberately left unresolved by this command.
+   */
+  public function recoverHistoricalFacts(string $period, bool $apply = FALSE): array {
+    $date = \DateTimeImmutable::createFromFormat('!Y-m-d', $period);
+    if (!$date || $date->format('Y-m-01') !== $period || $period > date('Y-m-01')) {
+      throw new \InvalidArgumentException('Use an existing monthly anchor in YYYY-MM-01 format, not a future month.');
+    }
+    $transaction = $apply ? $this->database->startTransaction() : NULL;
+    try {
+      $query = $this->database->select('ms_snapshot', 's')->fields('s')
+        ->condition('snapshot_date', $period)->condition('snapshot_type', 'monthly')
+        ->condition('source', 'automatic_cron');
+      if ($apply) {
+        $query->forUpdate();
+      }
+      $headers = $query->execute()->fetchAllAssoc('definition');
+      if (!isset($headers['membership_totals'])) {
+        throw new \RuntimeException('An original automatic membership snapshot is required.');
+      }
+      $org = $this->database->select('ms_fact_org_snapshot', 'o')->fields('o')
+        ->condition('snapshot_id', $headers['membership_totals']->id)->execute()->fetchAssoc();
+      if (!$org) {
+        throw new \RuntimeException('Original membership facts are missing; do not substitute the current roster.');
+      }
+      $existing = $this->database->select('ms_fact_kpi_snapshot', 'k')->fields('k', ['kpi_id'])
+        ->condition('snapshot_id', $headers['membership_totals']->id)->execute()->fetchCol();
+      $kpis = [];
+      foreach (['kpi_total_active_members' => 'members_active', 'kpi_total_new_member_signups' => 'joins'] as $kpi => $field) {
+        if (!in_array($kpi, $existing, TRUE)) {
+          $kpis[$kpi] = (int) $org[$field];
+        }
+      }
+      $donationTargets = [];
+      $donationTables = [
+        'donation_metrics' => 'ms_fact_donation_snapshot',
+        'donation_range_metrics' => 'ms_fact_donation_range_snapshot',
+      ];
+      foreach ($donationTables as $definition => $table) {
+        if (isset($headers[$definition]) && !(int) $this->database->select($table, 'f')
+          ->condition('snapshot_id', $headers[$definition]->id)->countQuery()->execute()->fetchField()) {
+          $donationTargets[$definition] = (int) $headers[$definition]->id;
+        }
+      }
+      $donations = NULL;
+      $start = $date->modify('-1 month');
+      $end = $date->modify('-1 second');
+      if ($donationTargets) {
+        if (!$this->database->schema()->tableExists('civicrm_contribution')) {
+          throw new \RuntimeException('Historical contribution ledger is unavailable.');
+        }
+        $donations = $this->calculateDonationMetrics($start, $end, isset($donationTargets['donation_range_metrics']));
+      }
+      $result = [
+        'period' => $period,
+        'activity_start' => $start->format('Y-m-d'),
+        'activity_end' => $end->format('Y-m-d'),
+        'mode' => $apply ? 'applied' : 'dry-run',
+        'kpis_from_original_org_facts' => $kpis,
+        'donation_definitions_from_ledger' => array_keys($donationTargets),
+        'donation_totals' => $donations ? array_intersect_key($donations, array_flip([
+          'donors_count', 'contributions_count', 'total_amount',
+        ])) : NULL,
+        'not_reconstructed' => [
+          'plan_levels', 'revenue_totals', 'storage_occupancy',
+          'member_certifications', 'active_access_grants', 'other KPIs',
+        ],
+      ];
+      if ($apply) {
+        foreach ($kpis as $kpi => $value) {
+          $this->database->insert('ms_fact_kpi_snapshot')->fields([
+            'snapshot_id' => $headers['membership_totals']->id,
+            'kpi_id' => $kpi,
+            'metric_value' => $value,
+            'period_year' => (int) $date->format('Y'),
+            'period_month' => (int) $date->format('m'),
+            'meta' => serialize(['recovered_from' => 'original_org_snapshot', 'recovered_at' => time()]),
+          ])->execute();
+        }
+        if (isset($donationTargets['donation_metrics'])) {
+          $this->importDonationMetricsSnapshot($donationTargets['donation_metrics'], [
+            'metrics' => $donations + [
+              'period_year' => (int) $start->format('Y'),
+              'period_month' => (int) $start->format('m'),
+            ],
+          ]);
+        }
+        if (isset($donationTargets['donation_range_metrics'])) {
+          $this->persistDonationRangeSnapshot($donationTargets['donation_range_metrics'], $donations['range_breakdown'] ?? [], (int) $start->format('Y'), (int) $start->format('m'), TRUE);
+        }
+        unset($transaction);
+        foreach (array_merge(['membership_totals'], array_keys($donationTargets)) as $definition) {
+          $this->invalidateDatasetCache($definition);
+        }
+      }
+      return $result;
+    }
+    catch (\Throwable $e) {
+      if (isset($transaction)) {
+        $transaction->rollBack();
+      }
+      throw $e;
+    }
+  }
+
+  /**
    * Takes a snapshot.
    *
    * @param string $snapshot_type
@@ -645,6 +847,7 @@ SQL,
    */
   public function takeSnapshot($snapshot_type, $is_test = FALSE, $snapshot_date = NULL, string $source = 'system', ?array $definitions = NULL, ?string $period_reference_date = NULL) {
     try {
+      $transaction = $this->database->startTransaction();
       $isTest = (bool) $is_test;
 
       $snapshotDateInput = $snapshot_date ?? (new \DateTime())->format('Y-m-d');
@@ -665,7 +868,7 @@ SQL,
         $selectedDefinitions = $supportedDefinitions;
       }
 
-      $isSystemRun = ($source === 'system');
+      $isSystemRun = in_array($source, ['system', 'automatic_cron'], TRUE);
       if ($isSystemRun) {
         $selectedDefinitions = array_values(array_filter($selectedDefinitions, function (string $definition): bool {
           return ($this->datasetDefinitions[$definition]['acquisition'] ?? 'automated') === 'automated';
@@ -674,7 +877,7 @@ SQL,
 
       if (empty($selectedDefinitions)) {
         $this->logger->warning('No eligible dataset definitions selected for snapshot type @type using source @source.', ['@type' => $snapshot_type, '@source' => $source]);
-        return;
+        return FALSE;
       }
 
       if (in_array('donation_range_metrics', $selectedDefinitions, TRUE) && !in_array('donation_metrics', $selectedDefinitions, TRUE)) {
@@ -754,7 +957,7 @@ SQL,
 
       if (empty($snapshotIds)) {
         $this->logger->error("Failed to create any snapshot records for {$snapshotDate}");
-        return;
+        throw new \RuntimeException('No snapshot metadata could be created.');
       }
 
       if (isset($snapshotIds['membership_totals'])) {
@@ -832,6 +1035,9 @@ SQL,
       $needsDonationMetrics = isset($snapshotIds['donation_metrics']) || isset($snapshotIds['donation_range_metrics']);
       $donationMetrics = NULL;
       if ($needsDonationMetrics) {
+        if (!$this->database->schema()->tableExists('civicrm_contribution')) {
+          throw new \RuntimeException('Requested donation source is unavailable.');
+        }
         $includeRangeBreakdown = isset($snapshotIds['donation_range_metrics']);
         $donationMetrics = $this->calculateDonationMetrics($periodStartObject, $periodEndObject, $includeRangeBreakdown);
       }
@@ -910,6 +1116,9 @@ SQL,
 
       if (isset($snapshotIds['storage_occupancy'])) {
         $storageData = $this->calculateStorageOccupancy();
+        if ($storageData === NULL) {
+          throw new \RuntimeException('Requested storage source is unavailable.');
+        }
         if ($storageData !== NULL) {
           $this->database->insert('ms_fact_storage_snapshot')
             ->fields([
@@ -956,9 +1165,23 @@ SQL,
 
       $this->logger->info("Snapshots stored for {$snapshotDate} (" . implode(', ', array_keys($snapshotIds)) . ")");
 
+      // Commit only after every selected dataset has finished writing.
+      foreach ($snapshotIds as $definition => $id) {
+        if ($this->database->schema()->fieldExists('ms_snapshot', 'completed_at')) {
+          $this->database->update('ms_snapshot')->fields(['completed_at' => time()])
+            ->condition('id', $id)->execute();
+        }
+      }
       $this->pruneSnapshots();
-    } catch (\Exception $e) {
+      unset($transaction);
+      return TRUE;
+    }
+    catch (\Throwable $e) {
+      if (isset($transaction)) {
+        $transaction->rollBack();
+      }
       $this->logger->error('Error taking snapshot: @message', ['@message' => $e->getMessage()]);
+      return FALSE;
     }
   }
 
@@ -2088,7 +2311,8 @@ SQL,
     if ($value === '' || strpos($value, '@') !== FALSE) {
       return 'UNASSIGNED';
     }
-    return $value;
+    // Snapshot plan keys use a case-insensitive database collation.
+    return mb_strtolower($value);
   }
 
   /**
@@ -3109,12 +3333,12 @@ SELECT
              OR COALESCE(manual_pause.field_manual_pause_value, 0) = 1
            THEN COALESCE(pmp.field_member_payment_monthly_value, 0) ELSE 0 END) AS paused_mrr,
   SUM(COALESCE(pmp.field_member_payment_monthly_value, 0)) AS total_mrr
-FROM users_field_data u
-INNER JOIN user__roles r ON u.uid = r.entity_id AND r.roles_target_id = 'member'
-LEFT JOIN user__field_chargebee_payment_pause cb_pause ON cb_pause.entity_id = u.uid AND cb_pause.deleted = 0
-LEFT JOIN user__field_manual_pause manual_pause ON manual_pause.entity_id = u.uid AND manual_pause.deleted = 0
-LEFT JOIN profile p ON p.uid = u.uid AND p.type = 'main'
-LEFT JOIN profile__field_member_payment_monthly pmp ON pmp.entity_id = p.profile_id AND pmp.deleted = 0
+FROM {users_field_data} u
+INNER JOIN {user__roles} r ON u.uid = r.entity_id AND r.roles_target_id = 'member'
+LEFT JOIN {user__field_chargebee_payment_pause} cb_pause ON cb_pause.entity_id = u.uid AND cb_pause.deleted = 0
+LEFT JOIN {user__field_manual_pause} manual_pause ON manual_pause.entity_id = u.uid AND manual_pause.deleted = 0
+LEFT JOIN {profile} p ON p.uid = u.uid AND p.type = 'main'
+LEFT JOIN {profile__field_member_payment_monthly} pmp ON pmp.entity_id = p.profile_id AND pmp.deleted = 0
 WHERE u.status = 1
 SQL;
 
@@ -3142,15 +3366,20 @@ SQL;
    */
   protected function calculateStorageOccupancy(): ?array {
     $schema = $this->database->schema();
+    // Drupal hashes long field table names; never assume the physical name.
+    $statusTable = 'storage_assignment__field_storage_assignment_status';
+    if ($this->entityTypeManager->hasDefinition('storage_assignment')) {
+      $storage = $this->entityTypeManager->getStorage('storage_assignment');
+      $statusTable = $storage->getTableMapping()->getFieldTableName('field_storage_assignment_status');
+    }
 
     // Base tables + field tables that are joined unconditionally below.
     $requiredTables = [
       'storage_unit',
       'storage_assignment',
       'storage_unit__field_storage_status',
-      'storage_assignment__field_storage_assignment_status',
+      $statusTable,
       'storage_assignment__field_storage_price_snapshot',
-      'storage_assignment__field_storage_complimentary',
     ];
     foreach ($requiredTables as $table) {
       if (!$schema->tableExists($table)) {
@@ -3169,20 +3398,36 @@ SQL;
       $oq->condition('ss.field_storage_status_value', 'occupied');
       $occupied = (int) $oq->countQuery()->execute()->fetchField();
 
-      $vacant = $total - $occupied;
-      $occupancy_rate = $total > 0 ? round(($occupied / $total) * 100, 2) : 0.00;
+      $vq = $this->database->select('storage_unit', 'su');
+      $vq->innerJoin('storage_unit__field_storage_status', 'ss', 'ss.entity_id = su.id AND ss.deleted = 0');
+      $vacant = (int) $vq->condition('ss.field_storage_status_value', 'vacant')->countQuery()->execute()->fetchField();
+      $rentable = $occupied + $vacant;
+      $occupancy_rate = $rentable > 0 ? round(($occupied / $rentable) * 100, 2) : 0.00;
 
       // Active assignment MRR.
       $aq = $this->database->select('storage_assignment', 'sa');
       $aq->innerJoin(
-        'storage_assignment__field_storage_assignment_status', 'fst',
+        $statusTable, 'fst',
         'fst.entity_id = sa.id AND fst.deleted = 0 AND fst.field_storage_assignment_status_value = :active',
         [':active' => 'active']
       );
       $aq->leftJoin('storage_assignment__field_storage_price_snapshot', 'fprice', 'fprice.entity_id = sa.id AND fprice.deleted = 0');
-      $aq->leftJoin('storage_assignment__field_storage_complimentary', 'fcomp', 'fcomp.entity_id = sa.id AND fcomp.deleted = 0');
+      $legacyComplimentary = '0';
+      if ($schema->tableExists('storage_assignment__field_storage_complimentary')) {
+        $aq->leftJoin('storage_assignment__field_storage_complimentary', 'fcomp', 'fcomp.entity_id = sa.id AND fcomp.deleted = 0');
+        $legacyComplimentary = 'COALESCE(fcomp.field_storage_complimentary_value, 0)';
+      }
+      if ($schema->tableExists('storage_assignment__field_storage_billing_method')) {
+        $aq->leftJoin('storage_assignment__field_storage_billing_method', 'fm', 'fm.entity_id = sa.id AND fm.deleted = 0');
+        $aq->addExpression("CASE WHEN fm.field_storage_billing_method_value = 'complimentary' THEN 1 WHEN fm.field_storage_billing_method_value IN ('stripe', 'invoiced') THEN 0 ELSE $legacyComplimentary END", 'is_complimentary');
+      }
+      elseif ($legacyComplimentary !== '0') {
+        $aq->addExpression($legacyComplimentary, 'is_complimentary');
+      }
+      else {
+        throw new \RuntimeException('Storage billing method source is unavailable.');
+      }
       $aq->addField('fprice', 'field_storage_price_snapshot_value', 'monthly_price');
-      $aq->addField('fcomp', 'field_storage_complimentary_value', 'is_complimentary');
 
       $billed_mrr = 0.0;
       $complimentary_mrr = 0.0;
@@ -3203,7 +3448,7 @@ SQL;
         $vq->leftJoin('storage_unit__field_storage_status', 'ss', 'ss.entity_id = su.id AND ss.deleted = 0');
         $vq->leftJoin('storage_unit__field_storage_type', 'stype', 'stype.entity_id = su.id AND stype.deleted = 0');
         $vq->leftJoin('taxonomy_term__field_monthly_price', 'tp', 'tp.entity_id = stype.field_storage_type_target_id AND tp.deleted = 0');
-        $vq->where('COALESCE(ss.field_storage_status_value, :vacant) != :occupied', [':vacant' => 'vacant', ':occupied' => 'occupied']);
+        $vq->condition('ss.field_storage_status_value', 'vacant');
         $vq->addExpression('COALESCE(SUM(tp.field_monthly_price_value), 0)', 'potential');
         $row = $vq->execute()->fetchAssoc();
         $potential_mrr = round((float) ($row['potential'] ?? 0), 2);
@@ -3218,7 +3463,7 @@ SQL;
       ) {
         $viol_q = $this->database->select('storage_assignment', 'sa');
         $viol_q->innerJoin(
-          'storage_assignment__field_storage_assignment_status', 'fst',
+          $statusTable, 'fst',
           'fst.entity_id = sa.id AND fst.deleted = 0 AND fst.field_storage_assignment_status_value = :active',
           [':active' => 'active']
         );
@@ -3266,11 +3511,11 @@ SELECT
   td.name AS badge_name,
   bs.field_badge_status_value AS status,
   COUNT(DISTINCT fm.field_member_to_badge_target_id) AS member_count
-FROM node n
-INNER JOIN node__field_badge_requested br ON br.entity_id = n.nid AND br.deleted = 0
-INNER JOIN node__field_badge_status bs ON bs.entity_id = n.nid AND bs.deleted = 0
-INNER JOIN node__field_member_to_badge fm ON fm.entity_id = n.nid AND fm.deleted = 0
-INNER JOIN taxonomy_term_field_data td ON td.tid = br.field_badge_requested_target_id
+FROM {node} n
+INNER JOIN {node__field_badge_requested} br ON br.entity_id = n.nid AND br.deleted = 0
+INNER JOIN {node__field_badge_status} bs ON bs.entity_id = n.nid AND bs.deleted = 0
+INNER JOIN {node__field_member_to_badge} fm ON fm.entity_id = n.nid AND fm.deleted = 0
+INNER JOIN {taxonomy_term_field_data} td ON td.tid = br.field_badge_requested_target_id
 WHERE n.type = 'badge_request'
   AND bs.field_badge_status_value IN ('active', 'pending')
 GROUP BY br.field_badge_requested_target_id, td.name, bs.field_badge_status_value

@@ -22,4 +22,15 @@ The Makerspace Snapshot module is designed to capture and store periodic snapsho
 
 ### Testing
 
-This module does not have an established automated testing framework. There is no `tests` directory, and the local development environment is not configured for easy execution of standard tools like Drush. As a result, frontend verification has been consistently skipped. Manual testing is required for all changes.
+Automated kernel tests live in `tests/src/Kernel`. Use the parent repository's
+PHPUnit bootstrap. In the current Lando environment, run them against MariaDB:
+
+```sh
+lando ssh -c 'env SIMPLETEST_DB=mysql://pantheon:pantheon@database/pantheon php vendor/bin/phpunit web/modules/custom/makerspace_snapshot/tests/src/Kernel'
+```
+
+The installed SQLite is older than Drupal's minimum. Source SQL must use Drupal
+`{table}` placeholders so prefixed test databases never read live site tables.
+Manual browser/Drush validation remains required for staff-facing changes; do not
+skip it because the tests pass. Recovery defaults to a read-only preview; never
+rebuild historical mutable membership or storage values using current state.

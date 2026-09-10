@@ -33,7 +33,7 @@ function makerspace_snapshot_cron() {
       $snapshot_type = 'daily';
       break;
     case 'monthly':
-      if ($now->format('j') === '1' || !$snapshotService->snapshotExists('monthly', $firstOfMonth, 'automatic_cron')) {
+      if ($now->format('j') === '1' || $snapshotService->automaticCaptureNeeded('monthly', $firstOfMonth)) {
         $should_run = TRUE;
         $snapshot_type = 'monthly';
       }
@@ -41,7 +41,7 @@ function makerspace_snapshot_cron() {
     case 'quarterly':
       if (in_array($now->format('n'), [1, 4, 7, 10])) {
         $quarterStart = (clone $now)->modify('first day of this month')->format('Y-m-d');
-        if ($now->format('j') === '1' || !$snapshotService->snapshotExists('quarterly', $quarterStart, 'automatic_cron')) {
+        if ($now->format('j') === '1' || $snapshotService->automaticCaptureNeeded('quarterly', $quarterStart)) {
           $should_run = TRUE;
           $snapshot_type = 'quarterly';
         }
@@ -50,7 +50,7 @@ function makerspace_snapshot_cron() {
     case 'annually':
       if ($now->format('n') === '1') {
         $yearStart = (clone $now)->modify('first day of January')->format('Y-m-d');
-        if ($now->format('j') === '1' || !$snapshotService->snapshotExists('annually', $yearStart, 'automatic_cron')) {
+        if ($now->format('j') === '1' || $snapshotService->automaticCaptureNeeded('annually', $yearStart)) {
           $should_run = TRUE;
           $snapshot_type = 'annually';
         }
@@ -83,18 +83,10 @@ function makerspace_snapshot_cron() {
       $period_reference_date = (new DrupalDateTime($snapshot_date))->modify('-1 day')->format('Y-m-d');
     }
 
-    if ($snapshotService->snapshotExists($snapshot_type, $snapshot_date, 'automatic_cron')) {
-      \Drupal::logger('makerspace_snapshot')->notice(
-        'Skipped duplicate automatic @type snapshot for @date.',
-        [
-          '@type' => $snapshot_type,
-          '@date' => $snapshot_date,
-        ]
-      );
-      return;
+    if ($snapshotService->automaticCaptureNeeded($snapshot_type, $snapshot_date)) {
+      $snapshotService->takeSnapshot($snapshot_type, FALSE, $snapshot_date, 'automatic_cron', NULL, $period_reference_date);
     }
 
-    $snapshotService->takeSnapshot($snapshot_type, FALSE, $snapshot_date, 'automatic_cron', NULL, $period_reference_date);
   }
 
   // After the monthly snapshot window (day 2+, so the missed-1st catch-up has

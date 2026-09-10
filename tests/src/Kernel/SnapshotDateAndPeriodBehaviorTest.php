@@ -302,6 +302,47 @@ class SnapshotDateAndPeriodBehaviorTest extends KernelTestBase {
   }
 
   /**
+   * Missing donations are rebuilt from the preceding month’s ledger.
+   */
+  public function testHistoricalDonationRecovery(): void {
+    $this->installSchema('makerspace_snapshot', ['ms_fact_kpi_snapshot']);
+    $this->seedContributionsForPeriodTest();
+    $ids = [];
+    foreach (['membership_totals', 'donation_metrics', 'donation_range_metrics'] as $definition) {
+      $ids[$definition] = $this->database->insert('ms_snapshot')->fields([
+        'definition' => $definition,
+        'snapshot_date' => '2026-02-01',
+        'snapshot_type' => 'monthly',
+        'source' => 'automatic_cron',
+        'created_at' => strtotime('2026-02-01'),
+      ])->execute();
+    }
+    $this->database->insert('ms_fact_org_snapshot')->fields([
+      'snapshot_id' => $ids['membership_totals'],
+      'members_active' => 10,
+      'members_total' => 10,
+      'members_paused' => 0,
+      'members_lapsed' => 0,
+      'joins' => 3,
+      'cancels' => 1,
+      'net_change' => 2,
+    ])->execute();
+    $service = $this->container->get('makerspace_snapshot.snapshot_service');
+    $plan = $service->recoverHistoricalFacts('2026-02-01');
+    $this->assertEquals(100, $plan['donation_totals']['total_amount']);
+    $this->assertSame(0, (int) $this->database->select('ms_fact_donation_snapshot')->countQuery()->execute()->fetchField());
+    $service->recoverHistoricalFacts('2026-02-01', TRUE);
+    $fact = $this->database->select('ms_fact_donation_snapshot', 'd')->fields('d')->execute()->fetchAssoc();
+    $this->assertEquals(100, $fact['total_amount']);
+    $this->assertEquals(1, $fact['period_month']);
+    $this->assertEquals(2026, $fact['period_year']);
+    $again = $service->recoverHistoricalFacts('2026-02-01', TRUE);
+    $this->assertSame([], $again['donation_definitions_from_ledger']);
+    $this->assertSame([], $again['kpis_from_original_org_facts']);
+    $this->assertSame($fact, $this->database->select('ms_fact_donation_snapshot', 'd')->fields('d')->execute()->fetchAssoc());
+  }
+
+  /**
    * Creates a pared-down civicrm_contribution schema for testing.
    */
   protected function createContributionSchema(): void {
@@ -592,12 +633,20 @@ class SnapshotDateAndPeriodBehaviorTest extends KernelTestBase {
         'sql' => "SELECT 0 AS member_id, 'MEMBER_LAPSED' AS plan_code, 'Member (Lapsed)' AS plan_label WHERE 1=0",
       ],
       'sql_joins' => [
-        'sql' => "SELECT u.uid AS member_id, 'UNASSIGNED' AS plan_code, 'Unassigned' AS plan_label, date(u.created, 'unixepoch') AS occurred_at FROM users_field_data u INNER JOIN user__roles r ON u.uid = r.entity_id WHERE r.roles_target_id = 'member' AND datetime(u.created, 'unixepoch') BETWEEN :start AND :end",
+        'sql' => "SELECT u.uid AS member_id, 'UNASSIGNED' AS plan_code, 'Unassigned' AS plan_label, date(u.created, 'unixepoch') AS occurred_at FROM {users_field_data} u INNER JOIN {user__roles} r ON u.uid = r.entity_id WHERE r.roles_target_id = 'member' AND datetime(u.created, 'unixepoch') BETWEEN :start AND :end",
       ],
       'sql_cancels' => [
         'sql' => "SELECT 0 AS member_id, 'UNASSIGNED' AS plan_code, 'Unassigned' AS plan_label, '1970-01-01' AS occurred_at WHERE 1=0",
       ],
     ];
+
+    if ($this->database->driver() !== 'sqlite') {
+      $queries['sql_joins']['sql'] = str_replace(
+        ["date(u.created, 'unixepoch')", "datetime(u.created, 'unixepoch')"],
+        ['DATE(FROM_UNIXTIME(u.created))', 'FROM_UNIXTIME(u.created)'],
+        $queries['sql_joins']['sql']
+      );
+    }
 
     $property = new \ReflectionProperty($snapshotService, 'sourceQueries');
     $property->setAccessible(TRUE);

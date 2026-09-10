@@ -57,3 +57,43 @@ The module follows a consistent pattern for listing, importing, and exporting da
    - If the dataset participates in the snapshot export ZIP, extend `SnapshotService::getSnapshotExportData()` accordingly.
 
 Every dataset keyed in `buildDefinitions()` automatically gains admin listings, import upload widgets, historical download links on the data sources tab, and entries on the Download Snapshot Data page. Keeping machine names in `snake_case`, headers aligned with `buildDefinitions()`, and CSV files in UTF-8 ensures imports remain stable across environments.
+
+
+## Snapshot integrity and historical recovery
+
+Captures commit their headers and facts in one database transaction. A failed
+replacement preserves the previous run; a failed new run leaves no partial
+headers. Plan codes are trimmed and case-normalized before grouping. Update
+`makerspace_snapshot_update_10020` adds `completed_at`; legacy rows retain zero
+because their completion cannot be inferred from a header.
+
+`drush makerspace-snapshot:health --period=YYYY-MM-01` checks automatic-source
+facts, missing KPI detail, prior-month KPI coverage and membership/plan
+reconciliation. Empty variable-length datasets require a completed capture.
+Automatic cron can retry an incomplete capture created today, but does not
+replace older partial history with today's mutable roster. Import-only
+survey definitions are excluded from automatic captures. Existing health
+notifications now receive these fact-level findings.
+
+For an existing partial monthly run, preview bounded recovery:
+
+```sh
+drush makerspace-snapshot:recover-facts --period=2026-09-01
+# After reviewing the preview in the target environment:
+drush makerspace-snapshot:recover-facts --period=2026-09-01 --apply
+drush makerspace-snapshot:health --period=2026-09-01
+```
+
+Recovery adds only missing active-member/new-signup KPIs from the original org
+fact, and missing donation facts from dated contributions in the preceding
+completed month. It does not replace existing facts and is idempotent. Dated
+contributions reflect the ledger as it exists at recovery time, including later
+corrections. Other missing KPIs, plans, revenue, storage, certifications and
+access grants remain unresolved unless historical evidence is supplied. Health
+may therefore still fail after safe recovery; do not rerun a whole historical
+snapshot just to clear warnings.
+
+Storage resolves the assignment-status table through Drupal's field mapping,
+uses the current billing method with the legacy complimentary fallback, and
+excludes inactive units from rentable capacity. Stored monthly price fields are
+assignment prices, not proof of provider billing or collected revenue.

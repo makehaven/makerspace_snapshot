@@ -22,6 +22,7 @@ function makerspace_snapshot_schema() {
       'snapshot_date' => ['type' => 'varchar', 'length' => 10, 'not null' => TRUE], // YYYY-MM-01
       'source' => ['type' => 'varchar', 'length' => 32, 'not null' => TRUE, 'default' => 'system'],
       'created_at' => ['type' => 'int', 'not null' => FALSE],
+      'completed_at' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
     ],
     'primary key' => ['id'],
     'unique keys' => [
@@ -766,5 +767,17 @@ function makerspace_snapshot_update_10018() {
     if ($schema->tableExists($table)) {
       $schema->dropTable($table);
     }
+  }
+}
+
+/**
+ * Record successful capture completion without asserting legacy completeness.
+ */
+function makerspace_snapshot_update_10020() {
+  $schema = \Drupal::database()->schema();
+  if (!$schema->fieldExists('ms_snapshot', 'completed_at')) {
+    $schema->addField('ms_snapshot', 'completed_at', [
+      'type' => 'int', 'not null' => TRUE, 'default' => 0,
+    ]);
   }
 }

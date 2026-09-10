@@ -58,7 +58,7 @@ class SnapshotHealthMonitor {
     $period = $period ?: date('Y-m-01');
     $issues = [];
 
-    $issues = array_merge($issues, $this->checkDefinitionCoverage($period));
+    $issues = array_merge($issues, $this->snapshotService->snapshotIssues('monthly', $period));
     $issues = array_merge($issues, $this->checkKpiZeroDrops($period));
     $issues = array_merge($issues, $this->checkOrgTotals($period));
 
@@ -98,40 +98,6 @@ class SnapshotHealthMonitor {
   }
 
   /**
-   * Flags automated definitions with no ms_snapshot row for the period.
-   */
-  protected function checkDefinitionCoverage(string $period): array {
-    if (!$this->database->schema()->tableExists('ms_snapshot')) {
-      return ['ms_snapshot table does not exist.'];
-    }
-
-    $expected = [];
-    foreach ($this->snapshotService->buildDefinitions() as $key => $definition) {
-      if (($definition['acquisition'] ?? 'automated') === 'automated') {
-        $expected[] = $key;
-      }
-    }
-
-    $written = $this->database->select('ms_snapshot', 's')
-      ->fields('s', ['definition'])
-      ->condition('snapshot_date', $period)
-      ->condition('snapshot_type', 'monthly')
-      ->execute()
-      ->fetchCol();
-
-    if (!$written) {
-      return [sprintf('No monthly snapshot recorded for %s (expected %d definitions).', $period, count($expected))];
-    }
-
-    $issues = [];
-    $missing = array_diff($expected, $written);
-    if ($missing) {
-      $issues[] = sprintf('Missing definitions for %s: %s.', $period, implode(', ', $missing));
-    }
-    return $issues;
-  }
-
-  /**
    * Flags KPIs that recorded 0 (or vanished) after consistent nonzero months.
    */
   protected function checkKpiZeroDrops(string $period): array {
@@ -148,7 +114,7 @@ class SnapshotHealthMonitor {
 
     $history = $this->loadKpiValues(array_merge([$period], $priorPeriods));
     if (empty($history[$period])) {
-      // Coverage check already reports a missing snapshot.
+      // Fact-level checks report the absent set, even when headers exist.
       return [];
     }
 
@@ -196,6 +162,7 @@ class SnapshotHealthMonitor {
     $query->addField('o', 'members_active');
     $query->condition('s.snapshot_date', $period);
     $query->condition('s.snapshot_type', 'monthly');
+    $query->condition('s.source', 'automatic_cron');
     $query->range(0, 1);
     $active = $query->execute()->fetchField();
     if ($active !== FALSE && (int) $active === 0) {
@@ -214,6 +181,7 @@ class SnapshotHealthMonitor {
     $query->fields('k', ['kpi_id', 'metric_value']);
     $query->condition('s.snapshot_date', $periods, 'IN');
     $query->condition('s.snapshot_type', 'monthly');
+    $query->condition('s.source', 'automatic_cron');
     $query->condition('s.definition', 'membership_totals');
 
     $values = [];

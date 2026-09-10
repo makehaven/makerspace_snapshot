@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\makerspace_snapshot\Kernel;
 
+use Psr\Log\LoggerInterface;
 use Drupal\KernelTests\KernelTestBase;
 
 /**
@@ -35,6 +36,7 @@ class DonationMetricsSnapshotTest extends KernelTestBase {
 
     $this->database = \Drupal::database();
     $this->installConfig(['makerspace_snapshot']);
+    $this->config('makerspace_snapshot.settings')->set('retention_window_months', 0)->save();
     $this->installSchema('makerspace_snapshot', [
       'ms_snapshot',
       'ms_fact_donation_snapshot',
@@ -52,6 +54,12 @@ class DonationMetricsSnapshotTest extends KernelTestBase {
     /** @var \Drupal\makerspace_snapshot\SnapshotService $snapshotService */
     $snapshotService = $this->container->get('makerspace_snapshot.snapshot_service');
     $this->overrideSourceQueriesForSqlite($snapshotService);
+    $errors = [];
+    $logger = $this->createMock(LoggerInterface::class);
+    $logger->method('error')->willReturnCallback(static function ($message, array $context) use (&$errors) {
+      $errors[] = $context['@message'] ?? $message;
+    });
+    (new \ReflectionProperty($snapshotService, 'logger'))->setValue($snapshotService, $logger);
 
     $snapshotService->takeSnapshot(
       'monthly',
@@ -66,7 +74,7 @@ class DonationMetricsSnapshotTest extends KernelTestBase {
       ->execute()
       ->fetchAssoc();
 
-    $this->assertNotEmpty($donationFact, 'Donation snapshot row exists.');
+    $this->assertNotEmpty($donationFact, 'Donation snapshot row exists. ' . implode('; ', $errors));
     $this->assertSame(2, (int) $donationFact['donors_count']);
     $this->assertSame(2, (int) $donationFact['ytd_unique_donors']);
     $this->assertSame(2, (int) $donationFact['contributions_count']);

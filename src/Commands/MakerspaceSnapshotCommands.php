@@ -61,6 +61,23 @@ class MakerspaceSnapshotCommands extends DrushCommands {
   }
 
   /**
+   * Recover only missing facts supported by original counts or dated gifts.
+   *
+   * @command makerspace-snapshot:recover-facts
+   * @option period Existing monthly anchor (YYYY-MM-01).
+   * @option apply Write the missing facts. Without this option, preview only.
+   * @usage drush makerspace-snapshot:recover-facts --period=2026-09-01
+   */
+  public function recoverFacts(array $options = ['period' => NULL, 'apply' => FALSE]): int {
+    if (empty($options['period'])) {
+      throw new \InvalidArgumentException('An explicit --period is required.');
+    }
+    $result = $this->snapshotService->recoverHistoricalFacts($options['period'], (bool) $options['apply']);
+    $this->output()->writeln(json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+    return self::EXIT_SUCCESS;
+  }
+
+  /**
    * Compute & upsert a snapshot using configured SQL.
    *
    * @command makerspace-snapshot:snapshot
@@ -73,13 +90,15 @@ class MakerspaceSnapshotCommands extends DrushCommands {
     'snapshot-date' => NULL,
     'snapshot-type' => NULL,
     'is-test' => FALSE,
-  ]): void {
-    $this->snapshotService->takeSnapshot(
+  ],
+  ): int {
+    $success = $this->snapshotService->takeSnapshot(
       $options['snapshot-type'] ?? 'monthly',
       $options['is-test'] ?? FALSE,
       $options['snapshot-date'] ?? NULL,
       'manual_drush'
     );
+    return $success ? self::EXIT_SUCCESS : self::EXIT_FAILURE;
   }
 
   /**

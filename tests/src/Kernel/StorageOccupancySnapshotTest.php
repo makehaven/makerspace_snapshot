@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Drupal\Tests\makerspace_snapshot\Kernel;
 
 use Drupal\Core\Database\Connection;
+use Drupal\Core\Entity\Sql\TableMappingInterface;
+use Drupal\Core\Entity\Sql\SqlContentEntityStorage;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\KernelTests\KernelTestBase;
 
 /**
@@ -139,6 +142,60 @@ class StorageOccupancySnapshotTest extends KernelTestBase {
   }
 
   /**
+   * Long field table names use Drupal's mapping, not guessed SQL identifiers.
+   */
+  public function testHashedStatusTableAndCurrentBillingMethod(): void {
+    $this->createStorageSchema();
+    $this->seedStorageData();
+    $this->database->schema()->renameTable('storage_assignment__field_storage_assignment_status', 'storage_assignment__test_hash');
+    $this->database->schema()->createTable('storage_assignment__field_storage_billing_method', [
+      'fields' => [
+        'entity_id' => ['type' => 'int', 'not null' => TRUE],
+        'deleted' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+        'field_storage_billing_method_value' => ['type' => 'varchar', 'length' => 64],
+      ],
+    ]);
+    $this->database->insert('storage_assignment__field_storage_billing_method')
+      ->fields(['entity_id', 'field_storage_billing_method_value'])
+      ->values([1, 'complimentary'])->values([2, 'stripe'])->execute();
+    $mapping = $this->createMock(TableMappingInterface::class);
+    $mapping->method('getFieldTableName')->with('field_storage_assignment_status')->willReturn('storage_assignment__test_hash');
+    $storage = $this->createMock(SqlContentEntityStorage::class);
+    $storage->method('getTableMapping')->willReturn($mapping);
+    $manager = $this->createMock(EntityTypeManagerInterface::class);
+    $manager->method('hasDefinition')->with('storage_assignment')->willReturn(TRUE);
+    $manager->method('getStorage')->with('storage_assignment')->willReturn($storage);
+    $service = $this->container->get('makerspace_snapshot.snapshot_service');
+    (new \ReflectionProperty($service, 'entityTypeManager'))->setValue($service, $manager);
+    $data = (new \ReflectionMethod($service, 'calculateStorageOccupancy'))->invoke($service);
+    $this->assertNotNull($data);
+    $this->assertEquals(75, $data['billed_mrr']);
+    $this->assertEquals(150, $data['complimentary_mrr']);
+
+    // An unset current method falls back to the legacy complimentary flag.
+    $this->database->update('storage_assignment__field_storage_billing_method')
+      ->fields(['field_storage_billing_method_value' => ''])->condition('entity_id', 2)->execute();
+    $data = (new \ReflectionMethod($service, 'calculateStorageOccupancy'))->invoke($service);
+    $this->assertEquals(0, $data['billed_mrr']);
+    $this->assertEquals(225, $data['complimentary_mrr']);
+  }
+
+  /**
+   * Inactive units must not be treated as available capacity.
+   */
+  public function testInactiveCapacityIsExcluded(): void {
+    $this->createStorageSchema();
+    $this->seedStorageData();
+    $this->database->update('storage_unit__field_storage_status')
+      ->fields(['field_storage_status_value' => 'inactive'])->condition('entity_id', 3)->execute();
+    $service = $this->container->get('makerspace_snapshot.snapshot_service');
+    $data = (new \ReflectionMethod($service, 'calculateStorageOccupancy'))->invoke($service);
+    $this->assertSame(3, $data['units_total']);
+    $this->assertSame(0, $data['units_vacant']);
+    $this->assertEquals(100, $data['occupancy_rate']);
+  }
+
+  /**
    * Creates the minimum storage ECK tables required by the calculation.
    *
    * Does NOT create the optional type/price or violation tables so that
@@ -235,7 +292,9 @@ class StorageOccupancySnapshotTest extends KernelTestBase {
       ->fields(['entity_id' => 1, 'deleted' => 0, 'field_storage_status_value' => 'occupied'])->execute();
     $this->database->insert('storage_unit__field_storage_status')
       ->fields(['entity_id' => 2, 'deleted' => 0, 'field_storage_status_value' => 'occupied'])->execute();
-    // Unit 3 intentionally has no status row — treated as non-occupied.
+    // Only an explicitly vacant unit contributes to available capacity.
+    $this->database->insert('storage_unit__field_storage_status')
+      ->fields(['entity_id' => 3, 'deleted' => 0, 'field_storage_status_value' => 'vacant'])->execute();
 
     // 2 active assignments.
     $this->database->insert('storage_assignment')->fields(['id' => 1])->execute();

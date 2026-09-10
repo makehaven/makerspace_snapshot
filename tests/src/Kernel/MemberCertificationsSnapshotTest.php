@@ -19,6 +19,13 @@ use Drupal\KernelTests\KernelTestBase;
  */
 class MemberCertificationsSnapshotTest extends KernelTestBase {
 
+  /**
+   * Tests supply external Unifi settings without enabling that module.
+   *
+   * @var bool
+   */
+  protected $strictConfigSchema = FALSE;
+
   protected Connection $database;
 
   protected static $modules = [
