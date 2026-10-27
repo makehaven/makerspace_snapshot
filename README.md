@@ -97,3 +97,41 @@ Storage resolves the assignment-status table through Drupal's field mapping,
 uses the current billing method with the legacy complimentary fallback, and
 excludes inactive units from rentable capacity. Stored monthly price fields are
 assignment prices, not proof of provider billing or collected revenue.
+
+## Early warning (nightly readings + Slack tripwires)
+
+`src/EarlyWarning/EarlyWarningMonitor.php`, added 2026-10-27. It runs from
+`hook_cron` once a day after 6am (site timezone) and does three things:
+
+1. **Records readings.** About 20 flow metrics (event registrations, join-form
+   submissions and the share with no website account, new accounts, new
+   members, Chargebee sync activity, door events, CiviCRM reminders, mail
+   give-ups, quizzes, store, lending and more) are stored as one row per metric
+   per day in `ms_early_warning_reading`, kept for 400 days. The weekly
+   workflow-health sweep in the site repo can then compare this week with last
+   week instead of relying on memory.
+2. **Trips tripwires.** `EarlyWarningMonitor::TRIPWIRES` is a short list of
+   things that should never happen in a normal week. Thresholds come from 26
+   weeks of live history (2026-04 → 2026-10). A tripwire posts to Slack (the
+   `slack_connector` webhook, with `makerspace_snapshot.settings:health_slack_channel`
+   when set) when it trips, again every 3 days while it stays tripped, and once
+   when it clears. Quiet nights post nothing.
+3. **Raises one-time notices.** It flags a billing plan nobody has seen before
+   (the first run records the existing plans silently), and a member who joined
+   in the last 14 days whose email bounced in CiviCRM or looks like a typo for
+   a big provider (via `makerspace_email_guard`, when installed). Each item is
+   reported once.
+
+Every check asks "did the thing happen?" rather than "was there an error?".
+The costly failures here, such as reminders silently dead from April to July
+2026, wrote no error at all. A probe that throws reads as "could not read",
+never as 0, and never trips a wire on its own.
+
+```bash
+drush makerspace-snapshot:early-warning           # read-only: today vs 1 and 7 days ago
+drush makerspace-snapshot:early-warning --record  # the nightly run, now (stores + posts)
+```
+
+To add a metric, add a probe to `probes()`. Add a tripwire only with a
+threshold read off live history, and update the unit test's `NORMAL` readings
+so a normal week still trips nothing.

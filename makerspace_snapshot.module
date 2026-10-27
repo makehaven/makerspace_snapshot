@@ -96,6 +96,15 @@ function makerspace_snapshot_cron() {
   if ($interval === 'monthly' && (int) $now->format('j') >= 2) {
     \Drupal::service('makerspace_snapshot.health_monitor')->checkAndNotify($firstOfMonth);
   }
+
+  // Nightly early-warning readings and tripwires (once a day after 6am). Must
+  // never break the cron run it rides on.
+  try {
+    \Drupal::service('makerspace_snapshot.early_warning')->runIfDue();
+  }
+  catch (\Throwable $e) {
+    \Drupal::logger('makerspace_snapshot')->error('Early warning run failed: @msg', ['@msg' => $e->getMessage()]);
+  }
 }
 
 /**

@@ -8,3 +8,9 @@ services:
       - '@makerspace_snapshot.health_monitor'
     tags:
       - { name: drush.command }
+  makerspace_snapshot.early_warning_commands:
+    class: Drupal\makerspace_snapshot\Commands\EarlyWarningCommands
+    arguments:
+      - '@makerspace_snapshot.early_warning'
+    tags:
+      - { name: drush.command }
