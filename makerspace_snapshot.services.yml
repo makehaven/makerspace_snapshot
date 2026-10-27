@@ -8,6 +8,11 @@ services:
   makerspace_snapshot.health_monitor:
     class: Drupal\makerspace_snapshot\Service\SnapshotHealthMonitor
     arguments: ['@database', '@makerspace_snapshot.snapshot_service', '@config.factory', '@logger.channel.makerspace_snapshot', '@http_client', '@state']
+  makerspace_snapshot.early_warning:
+    class: Drupal\makerspace_snapshot\EarlyWarning\EarlyWarningMonitor
+    arguments: ['@database', '@config.factory', '@logger.channel.makerspace_snapshot', '@http_client', '@state', '@datetime.time']
+    calls:
+      - [setEmailChecker, ['@?makerspace_email_guard.checker']]
   Drupal\makerspace_snapshot\Commands\MakerspaceSnapshotCommands:
     arguments: ['@database', '@logger.channel.makerspace_snapshot', '@makerspace_snapshot.snapshot_service', '@makerspace_snapshot.health_monitor']
     tags:

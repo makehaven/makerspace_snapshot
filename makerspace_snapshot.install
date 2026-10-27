@@ -227,6 +227,21 @@ function makerspace_snapshot_schema() {
     'primary key' => ['snapshot_id'],
   ];
 
+  $schema['ms_early_warning_reading'] = [
+    'description' => 'Nightly early-warning readings: one row per metric per day (EarlyWarningMonitor).',
+    'fields' => [
+      'reading_date' => ['type' => 'varchar', 'length' => 10, 'not null' => TRUE, 'description' => 'Site-timezone date, Y-m-d.'],
+      'metric' => ['type' => 'varchar', 'length' => 64, 'not null' => TRUE],
+      'value' => ['type' => 'numeric', 'precision' => 14, 'scale' => 2, 'not null' => FALSE],
+      'tripped' => ['type' => 'int', 'size' => 'tiny', 'not null' => TRUE, 'default' => 0],
+      'created' => ['type' => 'int', 'not null' => TRUE, 'default' => 0],
+    ],
+    'primary key' => ['reading_date', 'metric'],
+    'indexes' => [
+      'metric_date' => ['metric', 'reading_date'],
+    ],
+  ];
+
   return $schema;
 }
 
@@ -779,5 +794,15 @@ function makerspace_snapshot_update_10020() {
     $schema->addField('ms_snapshot', 'completed_at', [
       'type' => 'int', 'not null' => TRUE, 'default' => 0,
     ]);
+  }
+}
+
+/**
+ * Create the early-warning readings table.
+ */
+function makerspace_snapshot_update_10021() {
+  $schema = \Drupal::database()->schema();
+  if (!$schema->tableExists('ms_early_warning_reading')) {
+    $schema->createTable('ms_early_warning_reading', makerspace_snapshot_schema()['ms_early_warning_reading']);
   }
 }
