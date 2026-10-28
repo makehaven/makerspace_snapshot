@@ -79,6 +79,21 @@ class EarlyWarningMonitor {
   protected const KEEP_DAYS = 400;
 
   /**
+   * Default channel: #infrastructure, where the access box already alerts.
+   *
+   * Override with makerspace_snapshot.settings:early_warning_channel.
+   */
+  public const DEFAULT_CHANNEL = 'CN2TD49HR';
+
+  /**
+   * Default user group mentioned when a tripwire first trips: @staff.
+   *
+   * Override with makerspace_snapshot.settings:early_warning_mention_group
+   * (a Slack user group ID; '' for no mention).
+   */
+  public const DEFAULT_MENTION_GROUP = 'S014AFFKAF4';
+
+  /**
    * The tripwires.
    *
    * 'below' trips when reading < value, 'above' when reading > value. 'guard'
@@ -234,7 +249,7 @@ class EarlyWarningMonitor {
     foreach ($tripped as $key => $line) {
       $this->logger->warning('Early warning tripped: @line', ['@line' => $line]);
     }
-    $message = self::formatMessage($result);
+    $message = self::formatMessage($result, $this->mentionGroup());
     if ($message !== NULL) {
       $this->postToSlack($message);
     }
@@ -375,8 +390,15 @@ class EarlyWarningMonitor {
 
   /**
    * Builds the Slack text, or NULL when there is nothing worth posting.
+   *
+   * @param array $result
+   *   From run().
+   * @param string $mentionGroup
+   *   Slack user group ID to mention. Used only when a tripwire has newly
+   *   tripped: repeats, clears and heads-ups post without it, so a mention
+   *   always means "something just broke".
    */
-  public static function formatMessage(array $result): ?string {
+  public static function formatMessage(array $result, string $mentionGroup = ''): ?string {
     $plan = $result['plan'];
     $sections = [];
     if ($plan['new']) {
@@ -404,7 +426,8 @@ class EarlyWarningMonitor {
       $sections[] = '_Could not read: ' . implode(', ', $result['unreadable']) . '_';
     }
     $sections[] = '_Readings and history: `drush makerspace-snapshot:early-warning`_';
-    return ':rotating_light: *Website early warning — ' . $result['date'] . "*\n" . implode("\n\n", $sections);
+    $mention = ($plan['new'] && $mentionGroup !== '') ? '<!subteam^' . $mentionGroup . '> ' : '';
+    return $mention . ':rotating_light: *Website early warning — ' . $result['date'] . "*\n" . implode("\n\n", $sections);
   }
 
   /**
@@ -537,24 +560,67 @@ class EarlyWarningMonitor {
   }
 
   /**
-   * Posts to the shared slack_connector webhook, if one is configured.
+   * The user group to mention when a tripwire newly trips.
+   */
+  protected function mentionGroup(): string {
+    $group = $this->configFactory->get('makerspace_snapshot.settings')->get('early_warning_mention_group');
+    return $group === NULL ? self::DEFAULT_MENTION_GROUP : trim((string) $group);
+  }
+
+  /**
+   * Posts with slack_member_sync's bot token (chat.postMessage).
+   *
+   * Not slack_connector's incoming webhook: a modern webhook is locked to the
+   * one channel it was created for and silently ignores a channel override.
+   *
+   * Live only, checked explicitly. Test and dev run this same cron against a
+   * cloned live database and would post duplicate alerts, and the bot token
+   * is NOT blank on test (verified 2026-10-27, despite settings.php's
+   * non-live blanking block), so the token cannot be the gate. Readings are
+   * still recorded everywhere.
    */
   protected function postToSlack(string $text): void {
-    $webhook = (string) ($this->configFactory->get('slack_connector.settings')->get('webhook_url') ?? '');
-    if ($webhook === '') {
+    if (getenv('PANTHEON_ENVIRONMENT') !== 'live') {
+      $this->logger->info('Early warning: not live, Slack post skipped.');
       return;
     }
-    $payload = ['text' => $text];
-    $channel = $this->configFactory->get('makerspace_snapshot.settings')->get('health_slack_channel');
-    if (!empty($channel)) {
-      $payload['channel'] = $channel;
+    $token = trim((string) $this->configFactory->get('slack_member_sync.settings')->get('bot_token'));
+    if ($token === '') {
+      $this->logger->error('Early warning: no Slack bot token on live; alert not posted.');
+      return;
     }
+    $channel = trim((string) $this->configFactory->get('makerspace_snapshot.settings')->get('early_warning_channel')) ?: self::DEFAULT_CHANNEL;
+    $payload = [
+      'channel' => $channel,
+      'text' => $text,
+      'unfurl_links' => FALSE,
+      'unfurl_media' => FALSE,
+    ];
     try {
-      $this->httpClient->request('POST', $webhook, ['json' => $payload, 'timeout' => 10]);
+      $data = $this->slackCall('chat.postMessage', $payload, $token);
+      if (($data['error'] ?? '') === 'not_in_channel') {
+        $this->slackCall('conversations.join', ['channel' => $channel], $token);
+        $data = $this->slackCall('chat.postMessage', $payload, $token);
+      }
+      if (empty($data['ok'])) {
+        $this->logger->error('Early warning Slack post failed: @err', ['@err' => $data['error'] ?? 'unknown']);
+      }
     }
     catch (\Throwable $e) {
       $this->logger->error('Early warning Slack post failed: @msg', ['@msg' => $e->getMessage()]);
     }
+  }
+
+  /**
+   * Calls one Slack Web API method and returns the decoded body.
+   */
+  protected function slackCall(string $method, array $params, string $token): array {
+    $response = $this->httpClient->request('POST', 'https://slack.com/api/' . $method, [
+      'headers' => ['Authorization' => 'Bearer ' . $token],
+      'json' => $params,
+      'timeout' => 10,
+    ]);
+    return json_decode((string) $response->getBody(), TRUE) ?: [];
   }
 
   /**

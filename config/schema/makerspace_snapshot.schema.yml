@@ -13,6 +13,12 @@ makerspace_snapshot.settings:
     retention_window_months:
       type: integer
       label: 'Retention window in months'
+    early_warning_channel:
+      type: string
+      label: 'Early warning Slack channel ID (default #infrastructure)'
+    early_warning_mention_group:
+      type: string
+      label: 'Slack user group mentioned when a tripwire first trips (default @staff)'
 
 makerspace_snapshot.org_metrics:
   type: config_object
