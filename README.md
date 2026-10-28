@@ -112,10 +112,15 @@ assignment prices, not proof of provider billing or collected revenue.
    week instead of relying on memory.
 2. **Trips tripwires.** `EarlyWarningMonitor::TRIPWIRES` is a short list of
    things that should never happen in a normal week. Thresholds come from 26
-   weeks of live history (2026-04 → 2026-10). A tripwire posts to Slack (the
-   `slack_connector` webhook, with `makerspace_snapshot.settings:health_slack_channel`
-   when set) when it trips, again every 3 days while it stays tripped, and once
-   when it clears. Quiet nights post nothing.
+   weeks of live history (2026-04 → 2026-10). A tripwire posts to Slack
+   #infrastructure when it trips (mentioning @staff), again every 3 days while
+   it stays tripped and once when it clears, both without a mention. Quiet
+   nights post nothing. Posts use `slack_member_sync`'s bot token, not the
+   `slack_connector` webhook, because a modern webhook is locked to one channel.
+   Only live posts (`PANTHEON_ENVIRONMENT`); test has the token too, so the
+   token cannot be the gate.
+   Channel and group can be overridden in `makerspace_snapshot.settings`
+   (`early_warning_channel`, `early_warning_mention_group`; '' = no mention).
 3. **Raises one-time notices.** It flags a billing plan nobody has seen before
    (the first run records the existing plans silently), and a member who joined
    in the last 14 days whose email bounced in CiviCRM or looks like a typo for

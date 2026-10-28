@@ -124,6 +124,30 @@ class EarlyWarningTripwireTest extends UnitTestCase {
     $this->assertStringContainsString('Heads-up', $text);
     $this->assertStringContainsString('yale-assembly', $text);
     $this->assertStringContainsString('Could not read: door_events_24h', $text);
+    // A heads-up alone never mentions the group.
+    $this->assertStringNotContainsString('subteam', EarlyWarningMonitor::formatMessage($notice, 'S014AFFKAF4'));
+  }
+
+  /**
+   * @staff is mentioned only when a tripwire newly trips.
+   *
+   * @covers ::formatMessage
+   */
+  public function testMentionOnlyOnNewTrip(): void {
+    $base = [
+      'date' => '2026-10-27',
+      'readings' => ['door_events_24h' => 0.0] + self::NORMAL,
+      'tripped' => ['door_events_24h' => 'Door events in 24 h: 0'],
+      'notices' => [],
+      'unreadable' => [],
+    ];
+    $state = ['door_events_24h' => ['since' => 1000, 'alerted' => 1000]];
+    $new = ['plan' => ['new' => ['door_events_24h'], 'repeat' => [], 'cleared' => [], 'state' => $state]] + $base;
+    $this->assertStringStartsWith('<!subteam^S014AFFKAF4> ', EarlyWarningMonitor::formatMessage($new, 'S014AFFKAF4'));
+    $this->assertStringNotContainsString('subteam', EarlyWarningMonitor::formatMessage($new, ''));
+
+    $repeat = ['plan' => ['new' => [], 'repeat' => ['door_events_24h'], 'cleared' => [], 'state' => $state]] + $base;
+    $this->assertStringNotContainsString('subteam', EarlyWarningMonitor::formatMessage($repeat, 'S014AFFKAF4'));
   }
 
 }
