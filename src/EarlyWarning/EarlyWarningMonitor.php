@@ -174,7 +174,51 @@ class EarlyWarningMonitor {
       'normal' => 'normally under 400',
       'means' => 'something is looping and writing to the log.',
     ],
+    // 2026-11-04: a script created custom field 131 on live without its
+    // column, and every contact view, logged-in event registration and join
+    // failed for 17 hours until staff noticed.
+    'civicrm_custom_fields_missing_column' => [
+      'op' => 'above', 'value' => 0,
+      'title' => 'Active CiviCRM custom fields with no database column',
+      'normal' => 'always 0',
+      'means' => 'CiviCRM will fail on every page that loads that field group (contact view, registration, join). Add the column (see civicrm_custom_field.column_name) or disable the field.',
+    ],
   ];
+
+  /**
+   * Tripwires checked every hour, not nightly: breakage people hit live.
+   *
+   * Same shape as TRIPWIRES.
+   */
+  public const HOURLY_TRIPWIRES = [
+    // Replayed hourly on live watchdog 2026-09-18 → 2026-11-04: trips on
+    // 10-07 and 10-08 (event registration failing, unreported), 11-04 (the
+    // missing column; trips at 02:00 UTC, ~75 min in, vs 15 h until staff
+    // reported it) and once falsely on 10-02 (3 logged-out bots in an hour).
+    // Everyday CiviCRM noise ("session expired", bad event id) is not a
+    // database error and never counts.
+    'civicrm_db_error_people_6h' => [
+      'op' => 'above', 'value' => 2,
+      'title' => 'People hitting a CiviCRM database error in the last 6 h',
+      'normal' => 'normally 0–2',
+      'means' => 'CiviCRM pages are failing for staff or members (contact view, event registration, join). Check recent "civicrm" log entries for "Invalid Query" / "DB Error".',
+    ],
+  ];
+
+  /**
+   * Hours before a still-tripped hourly wire is posted again.
+   */
+  public const HOURLY_REPEAT_HOURS = 12;
+
+  /**
+   * State: the hour the hourly check last ran ('Y-m-d H').
+   */
+  protected const STATE_LAST_HOURLY_RUN = 'makerspace_snapshot.early_warning.last_hourly_run';
+
+  /**
+   * State: tripped hourly tripwires, same shape as STATE_TRIPPED.
+   */
+  protected const STATE_TRIPPED_HOURLY = 'makerspace_snapshot.early_warning.tripped_hourly';
 
   /**
    * Optional: makerspace_email_guard's checker, for typo-domain suggestions.
@@ -212,6 +256,66 @@ class EarlyWarningMonitor {
     // retry on every cron tick for the rest of the day.
     $this->state->set(self::STATE_LAST_RUN, $today);
     $this->run(TRUE);
+  }
+
+  /**
+   * Cron entry point for HOURLY_TRIPWIRES: at most once per clock hour.
+   */
+  public function runHourlyIfDue(): void {
+    $hour = date('Y-m-d H', $this->time->getRequestTime());
+    if ($this->state->get(self::STATE_LAST_HOURLY_RUN) === $hour) {
+      return;
+    }
+    $this->state->set(self::STATE_LAST_HOURLY_RUN, $hour);
+    $this->runHourly(TRUE);
+  }
+
+  /**
+   * Hourly tripwires. Readings are not stored in the nightly history.
+   *
+   * @param bool $act
+   *   FALSE: read-only (nothing written, nothing posted).
+   *
+   * @return array
+   *   Same shape as run().
+   */
+  public function runHourly(bool $act): array {
+    $now = $this->time->getRequestTime();
+    $readings = $this->takeReadings($this->hourlyProbes());
+    $tripped = self::evaluate($readings, self::HOURLY_TRIPWIRES);
+    $previous = $this->state->get(self::STATE_TRIPPED_HOURLY, []);
+    $plan = self::plan($tripped, is_array($previous) ? $previous : [], $now, self::HOURLY_REPEAT_HOURS * 3600);
+    $result = [
+      'date' => date('Y-m-d H:i', $now),
+      'readings' => $readings,
+      'tripped' => $tripped,
+      'plan' => $plan,
+      'notices' => [],
+      'unreadable' => array_keys(array_filter($readings, static fn ($v) => $v === NULL)),
+    ];
+    if (!$act) {
+      return $result;
+    }
+    $this->state->set(self::STATE_TRIPPED_HOURLY, $plan['state']);
+    foreach ($tripped as $line) {
+      $this->logger->warning('Early warning tripped: @line', ['@line' => $line]);
+    }
+    $message = self::formatMessage($result, $this->mentionGroup());
+    if ($message !== NULL) {
+      $this->postToSlack($message);
+    }
+    return $result;
+  }
+
+  /**
+   * Probes for HOURLY_TRIPWIRES.
+   */
+  protected function hourlyProbes(): array {
+    // A person is a uid, or the client address when logged out. The message
+    // text is in the serialized variables ('%message').
+    return [
+      'civicrm_db_error_people_6h' => ['requires' => 'watchdog', 'sql' => "SELECT COUNT(DISTINCT IF(uid > 0, CONCAT('u', uid), CONCAT('ip', hostname))) FROM watchdog WHERE type = 'civicrm' AND timestamp >= UNIX_TIMESTAMP() - 6*3600 AND (variables LIKE '%Invalid Query%' OR variables LIKE '%DB Error%')"],
+    ];
   }
 
   /**
@@ -289,6 +393,7 @@ class EarlyWarningMonitor {
       'lending_checkouts_7d' => ['requires' => 'library_transaction__field_library_action', 'sql' => "SELECT COUNT(*) FROM library_transaction_field_data t JOIN library_transaction__field_library_action a ON a.entity_id = t.id WHERE a.field_library_action_value = 'withdraw' AND t.created >= UNIX_TIMESTAMP() - 7*86400"],
       'store_lines_7d' => ['requires' => 'material_transaction_field_data', 'sql' => "SELECT COUNT(*) FROM material_transaction_field_data WHERE created >= UNIX_TIMESTAMP() - 7*86400"],
       'watchdog_peak_hour_24h' => ['requires' => 'watchdog', 'sql' => "SELECT IFNULL(MAX(c), 0) FROM (SELECT COUNT(*) c FROM watchdog WHERE timestamp >= UNIX_TIMESTAMP() - 86400 AND type NOT IN ('page not found', 'access denied') GROUP BY type, FLOOR(timestamp / 3600)) t"],
+      'civicrm_custom_fields_missing_column' => ['requires' => 'civicrm_custom_field', 'sql' => "SELECT COUNT(*) FROM civicrm_custom_field f JOIN civicrm_custom_group g ON g.id = f.custom_group_id LEFT JOIN information_schema.columns c ON c.table_schema = DATABASE() AND c.table_name = g.table_name AND c.column_name = f.column_name WHERE f.is_active = 1 AND g.is_active = 1 AND c.column_name IS NULL"],
     ];
   }
 
@@ -298,10 +403,10 @@ class EarlyWarningMonitor {
    * @return array
    *   [metric => float|null]. Skipped probes are absent.
    */
-  public function takeReadings(): array {
+  public function takeReadings(?array $probes = NULL): array {
     $schema = $this->database->schema();
     $readings = [];
-    foreach ($this->probes() as $key => $probe) {
+    foreach ($probes ?? $this->probes() as $key => $probe) {
       if (!empty($probe['requires']) && !$schema->tableExists($probe['requires'])) {
         continue;
       }
@@ -328,9 +433,9 @@ class EarlyWarningMonitor {
    * @return array
    *   [tripwire key => one-line description].
    */
-  public static function evaluate(array $readings): array {
+  public static function evaluate(array $readings, ?array $wires = NULL): array {
     $tripped = [];
-    foreach (self::TRIPWIRES as $key => $wire) {
+    foreach ($wires ?? self::TRIPWIRES as $key => $wire) {
       $value = $readings[$key] ?? NULL;
       if ($value === NULL) {
         continue;
@@ -409,7 +514,7 @@ class EarlyWarningMonitor {
     }
     if ($plan['cleared']) {
       $sections[] = "*Cleared*\n" . implode("\n", array_map(static function ($k) use ($result) {
-        $title = self::TRIPWIRES[$k]['title'] ?? $k;
+        $title = (self::TRIPWIRES + self::HOURLY_TRIPWIRES)[$k]['title'] ?? $k;
         $value = $result['readings'][$k] ?? NULL;
         return '• ' . $title . ($value === NULL ? '' : ': back to ' . self::number($value));
       }, $plan['cleared']));

@@ -127,7 +127,19 @@ assignment prices, not proof of provider billing or collected revenue.
    a big provider (via `makerspace_email_guard`, when installed). Each item is
    reported once.
 
-Every check asks "did the thing happen?" rather than "was there an error?".
+4. **Hourly: CiviCRM database errors.** `HOURLY_TRIPWIRES` runs once per
+   clock hour on cron. It trips when 3 or more different people (a uid, or
+   the client address when logged out) hit a CiviCRM "Invalid Query" or
+   "DB Error" in the last 6 hours. It is the one error-based check, added
+   after 2026-11-04. That day, custom field 131 existed on live without its
+   column, and contact view, logged-in registration and join failed for 17
+   hours until staff reported it. Replayed on live history, it would have
+   tripped 75 minutes in. Same Slack rules, but a still-tripped wire repeats
+   every 12 hours, and nothing is stored. The nightly set also checks that
+   every active custom field has its database column
+   (`civicrm_custom_fields_missing_column`, always 0).
+
+Every other check asks "did the thing happen?" rather than "was there an error?".
 The costly failures here, such as reminders silently dead from April to July
 2026, wrote no error at all. A probe that throws reads as "could not read",
 never as 0, and never trips a wire on its own.
@@ -135,6 +147,7 @@ never as 0, and never trips a wire on its own.
 ```bash
 drush makerspace-snapshot:early-warning           # read-only: today vs 1 and 7 days ago
 drush makerspace-snapshot:early-warning --record  # the nightly run, now (stores + posts)
+drush makerspace-snapshot:early-warning --hourly  # read-only: the hourly CiviCRM error check
 ```
 
 To add a metric, add a probe to `probes()`. Add a tripwire only with a
