@@ -31,6 +31,7 @@ class EarlyWarningTripwireTest extends UnitTestCase {
     'mail_giveups_24h' => 0,
     'quiz_completions_7d' => 165,
     'watchdog_peak_hour_24h' => 388,
+    'civicrm_custom_fields_missing_column' => 0,
   ];
 
   /**
@@ -148,6 +149,31 @@ class EarlyWarningTripwireTest extends UnitTestCase {
 
     $repeat = ['plan' => ['new' => [], 'repeat' => ['door_events_24h'], 'cleared' => [], 'state' => $state]] + $base;
     $this->assertStringNotContainsString('subteam', EarlyWarningMonitor::formatMessage($repeat, 'S014AFFKAF4'));
+  }
+
+  /**
+   * One custom field without its column trips the nightly wire.
+   *
+   * @covers ::evaluate
+   */
+  public function testMissingCustomFieldColumnTrips(): void {
+    $this->assertArrayHasKey('civicrm_custom_fields_missing_column', EarlyWarningMonitor::evaluate(['civicrm_custom_fields_missing_column' => 1.0] + self::NORMAL));
+  }
+
+  /**
+   * Hourly CiviCRM database-error wire, at the live-calibrated edge.
+   *
+   * 2026-11-04 outage: 3 people in the first 6 h; quiet weeks: 0–2.
+   *
+   * @covers ::evaluate
+   */
+  public function testHourlyDbErrorWire(): void {
+    $wires = EarlyWarningMonitor::HOURLY_TRIPWIRES;
+    $this->assertSame([], EarlyWarningMonitor::evaluate(['civicrm_db_error_people_6h' => 2.0], $wires));
+    $this->assertArrayHasKey('civicrm_db_error_people_6h', EarlyWarningMonitor::evaluate(['civicrm_db_error_people_6h' => 3.0], $wires));
+    // Hourly wires never leak into the nightly set, and vice versa.
+    $this->assertSame([], EarlyWarningMonitor::evaluate(['civicrm_db_error_people_6h' => 50.0] + self::NORMAL));
+    $this->assertSame([], EarlyWarningMonitor::evaluate(['door_events_24h' => 0.0], $wires));
   }
 
 }

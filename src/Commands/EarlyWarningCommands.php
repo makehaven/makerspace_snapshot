@@ -21,22 +21,26 @@ class EarlyWarningCommands extends DrushCommands {
    *
    * @command makerspace-snapshot:early-warning
    * @aliases ms-early-warning
-   * @option record Do the nightly run now: store readings, update tripwire state, post to Slack.
+   * @option record Do the run now: store readings, update tripwire state, post to Slack.
+   * @option hourly Run the hourly tripwires (CiviCRM database errors) instead of the nightly set.
    * @usage drush makerspace-snapshot:early-warning
    * @usage drush makerspace-snapshot:early-warning --record
+   * @usage drush makerspace-snapshot:early-warning --hourly
    */
-  public function earlyWarning(array $options = ['record' => FALSE]): int {
-    $result = $this->monitor->run((bool) $options['record']);
+  public function earlyWarning(array $options = ['record' => FALSE, 'hourly' => FALSE]): int {
+    $hourly = (bool) $options['hourly'];
+    $result = $hourly ? $this->monitor->runHourly((bool) $options['record']) : $this->monitor->run((bool) $options['record']);
     $time = strtotime($result['date']);
     $yesterday = date('Y-m-d', $time - 86400);
     $lastWeek = date('Y-m-d', $time - 7 * 86400);
-    $history = $this->monitor->history([$yesterday, $lastWeek]);
+    // Hourly readings are not stored, so they have no history columns.
+    $history = $hourly ? [] : $this->monitor->history([$yesterday, $lastWeek]);
 
     $fmt = static fn ($v) => $v === NULL ? '-' : EarlyWarningMonitor::number((float) $v);
     $this->output()->writeln(sprintf('Early warning — %s%s', $result['date'], $options['record'] ? ' (recorded)' : ' (read-only)'));
     $this->output()->writeln(sprintf('%-28s %10s %10s %10s  %s', 'metric', 'today', '1d ago', '7d ago', 'tripwire'));
     foreach ($result['readings'] as $metric => $value) {
-      $wire = EarlyWarningMonitor::TRIPWIRES[$metric] ?? NULL;
+      $wire = ($hourly ? EarlyWarningMonitor::HOURLY_TRIPWIRES : EarlyWarningMonitor::TRIPWIRES)[$metric] ?? NULL;
       $rule = $wire ? sprintf('%s %s', $wire['op'] === 'below' ? '<' : '>', $wire['value']) : '';
       $flag = isset($result['tripped'][$metric]) ? '  TRIPPED' : '';
       $this->output()->writeln(sprintf('%-28s %10s %10s %10s  %s%s', $metric, $fmt($value), $fmt($history[$yesterday][$metric] ?? NULL), $fmt($history[$lastWeek][$metric] ?? NULL), $rule, $flag));

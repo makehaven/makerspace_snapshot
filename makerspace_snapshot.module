@@ -105,6 +105,13 @@ function makerspace_snapshot_cron() {
   catch (\Throwable $e) {
     \Drupal::logger('makerspace_snapshot')->error('Early warning run failed: @msg', ['@msg' => $e->getMessage()]);
   }
+  // Hourly tripwires (breakage people are hitting now). Same rule.
+  try {
+    \Drupal::service('makerspace_snapshot.early_warning')->runHourlyIfDue();
+  }
+  catch (\Throwable $e) {
+    \Drupal::logger('makerspace_snapshot')->error('Early warning hourly run failed: @msg', ['@msg' => $e->getMessage()]);
+  }
 }
 
 /**
