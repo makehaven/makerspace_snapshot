@@ -78,6 +78,25 @@ class MakerspaceSnapshotCommands extends DrushCommands {
   }
 
   /**
+   * Recompute existing donation facts with the current donation definition.
+   *
+   * Replaces only donation_metrics and donation_range_metrics facts, each for
+   * the period it already records. Nothing else in a snapshot is touched.
+   *
+   * @command makerspace-snapshot:rebuild-donations
+   * @option from Earliest snapshot date to include (YYYY-MM-01).
+   * @option to Latest snapshot date to include (YYYY-MM-01).
+   * @option apply Write the recomputed facts. Without this option, preview only.
+   * @usage drush makerspace-snapshot:rebuild-donations
+   * @usage drush makerspace-snapshot:rebuild-donations --apply
+   */
+  public function rebuildDonations(array $options = ['from' => NULL, 'to' => NULL, 'apply' => FALSE]): int {
+    $result = $this->snapshotService->rebuildDonationFacts($options['from'] ?: NULL, $options['to'] ?: NULL, (bool) $options['apply']);
+    $this->output()->writeln(json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+    return self::EXIT_SUCCESS;
+  }
+
+  /**
    * Compute & upsert a snapshot using configured SQL.
    *
    * @command makerspace-snapshot:snapshot

@@ -153,6 +153,7 @@ class ImportSourceIsolationTest extends KernelTestBase {
       'fields' => [
         'id' => ['type' => 'serial', 'not null' => TRUE],
         'contribution_recur_id' => ['type' => 'int', 'not null' => FALSE],
+        'financial_type_id' => ['type' => 'int', 'not null' => TRUE, 'default' => 1],
         'contact_id' => ['type' => 'int', 'not null' => TRUE],
         'receive_date' => ['type' => 'varchar', 'length' => 32, 'not null' => TRUE],
         'total_amount' => ['type' => 'numeric', 'precision' => 10, 'scale' => 2, 'not null' => TRUE, 'default' => '0.00'],

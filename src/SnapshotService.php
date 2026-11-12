@@ -85,6 +85,11 @@ class SnapshotService {
   protected ?bool $donationRangeSnapshotAvailable = NULL;
 
   /**
+   * Cached CiviCRM financial type ID named "Donation".
+   */
+  protected ?int $donationFinancialTypeId = NULL;
+
+  /**
    * Fallback donation range definitions when no config is stored.
    */
   protected const DONATION_RANGE_DEFAULTS = [
@@ -817,6 +822,112 @@ SQL,
         foreach (array_merge(['membership_totals'], array_keys($donationTargets)) as $definition) {
           $this->invalidateDatasetCache($definition);
         }
+      }
+      return $result;
+    }
+    catch (\Throwable $e) {
+      if (isset($transaction)) {
+        $transaction->rollBack();
+      }
+      throw $e;
+    }
+  }
+
+  /**
+   * Recomputes existing donation facts from the dated contribution ledger.
+   *
+   * Only donation_metrics and donation_range_metrics facts are touched; no
+   * header is created or removed and no other definition is recomputed. Each
+   * fact keeps the period it already records (period_year/period_month), since
+   * that is what the dashboard groups by. Headers without a donation fact are
+   * reported and left to recover-facts. Contributions are dated, so the result
+   * reflects the ledger as it stands now, including later corrections.
+   *
+   * @param string|null $from
+   *   Earliest snapshot_date to include (YYYY-MM-01), or NULL for all.
+   * @param string|null $to
+   *   Latest snapshot_date to include (YYYY-MM-01), or NULL for all.
+   * @param bool $apply
+   *   Write the recomputed facts. Without it, preview only.
+   */
+  public function rebuildDonationFacts(?string $from = NULL, ?string $to = NULL, bool $apply = FALSE): array {
+    if (!$this->database->schema()->tableExists('civicrm_contribution')) {
+      throw new \RuntimeException('Contribution ledger is unavailable.');
+    }
+    foreach ([$from, $to] as $bound) {
+      if ($bound !== NULL && !preg_match('/^\d{4}-\d{2}-01$/', $bound)) {
+        throw new \InvalidArgumentException('Use YYYY-MM-01 for --from and --to.');
+      }
+    }
+
+    $query = $this->database->select('ms_snapshot', 's');
+    $query->leftJoin('ms_fact_donation_snapshot', 'd', 'd.snapshot_id = s.id');
+    $query->fields('s', ['id', 'snapshot_date', 'snapshot_type', 'source']);
+    $query->fields('d', ['period_year', 'period_month', 'donors_count', 'contributions_count', 'total_amount']);
+    $query->condition('s.definition', 'donation_metrics');
+    if ($from !== NULL) {
+      $query->condition('s.snapshot_date', $from, '>=');
+    }
+    if ($to !== NULL) {
+      $query->condition('s.snapshot_date', $to, '<=');
+    }
+    $query->orderBy('s.snapshot_date')->orderBy('s.id');
+    $headers = $query->execute()->fetchAll();
+
+    $rangeIds = [];
+    if ($this->donationRangeSnapshotTableExists()) {
+      $rangeQuery = $this->database->select('ms_snapshot', 's')
+        ->fields('s', ['id', 'snapshot_date', 'snapshot_type', 'source'])
+        ->condition('s.definition', 'donation_range_metrics');
+      foreach ($rangeQuery->execute() as $row) {
+        $rangeIds[$row->snapshot_date . '|' . $row->snapshot_type . '|' . $row->source] = (int) $row->id;
+      }
+    }
+
+    $result = ['mode' => $apply ? 'applied' : 'dry-run', 'rows' => [], 'skipped' => []];
+    $transaction = $apply ? $this->database->startTransaction() : NULL;
+    try {
+      foreach ($headers as $header) {
+        if ($header->period_year === NULL || !(int) $header->period_month) {
+          $result['skipped'][] = sprintf('%s %s #%d: no donation fact; use recover-facts', $header->snapshot_date, $header->source, $header->id);
+          continue;
+        }
+        $year = (int) $header->period_year;
+        $month = (int) $header->period_month;
+        $start = new \DateTimeImmutable(sprintf('%04d-%02d-01 00:00:00', $year, $month));
+        $end = $start->modify('last day of this month')->setTime(23, 59, 59);
+        $rangeId = $rangeIds[$header->snapshot_date . '|' . $header->snapshot_type . '|' . $header->source] ?? NULL;
+        $donations = $this->calculateDonationMetrics($start, $end, $rangeId !== NULL);
+
+        $result['rows'][] = [
+          'snapshot' => sprintf('%s %s #%d', $header->snapshot_date, $header->source, $header->id),
+          'period' => sprintf('%04d-%02d', $year, $month),
+          'before' => [
+            'donors' => (int) $header->donors_count,
+            'gifts' => (int) $header->contributions_count,
+            'amount' => round((float) $header->total_amount, 2),
+          ],
+          'after' => [
+            'donors' => $donations['donors_count'],
+            'gifts' => $donations['contributions_count'],
+            'amount' => round($donations['total_amount'], 2),
+          ],
+          'range_rebuilt' => $rangeId !== NULL,
+        ];
+
+        if ($apply) {
+          $this->importDonationMetricsSnapshot((int) $header->id, [
+            'metrics' => $donations + ['period_year' => $year, 'period_month' => $month],
+          ]);
+          if ($rangeId !== NULL) {
+            $this->persistDonationRangeSnapshot($rangeId, $donations['range_breakdown'] ?? [], $year, $month, TRUE);
+          }
+        }
+      }
+      if ($apply) {
+        unset($transaction);
+        $this->invalidateDatasetCache('donation_metrics');
+        $this->invalidateDatasetCache('donation_range_metrics');
       }
       return $result;
     }
@@ -2898,11 +3009,23 @@ SQL,
   }
 
   /**
-   * Applies standard filters to a contribution query.
+   * Restricts a contribution query to donations.
+   *
+   * A donation is a completed, non-test contribution of the "Donation"
+   * financial type that is not an event registration payment. Event Fee
+   * (class registrations) and Annual Sponsorship contributions are not
+   * donations: sponsorship has its own KPI. This matches the donor retention
+   * definition in makerspace_dashboard's DevelopmentDataService.
    */
   protected function applyContributionFilters($query, string $alias = 'c', bool $useHaving = FALSE): void {
     $query->condition("{$alias}.contribution_status_id", 1);
     $query->condition("{$alias}.is_test", 0);
+    $query->condition("{$alias}.financial_type_id", $this->donationFinancialTypeId());
+    if ($this->database->schema()->tableExists('civicrm_participant_payment')) {
+      $ppAlias = $alias . '_pp';
+      $query->leftJoin('civicrm_participant_payment', $ppAlias, "{$ppAlias}.contribution_id = {$alias}.id");
+      $query->isNull("{$ppAlias}.id");
+    }
     if ($useHaving) {
       $query->havingCondition("SUM(COALESCE({$alias}.total_amount, 0))", 0, '>');
     }
@@ -2910,6 +3033,29 @@ SQL,
       $query->where("COALESCE({$alias}.total_amount, 0) > :amount_zero", [':amount_zero' => 0]);
     }
     $query->isNotNull("{$alias}.contact_id");
+  }
+
+  /**
+   * Returns the ID of the CiviCRM financial type named "Donation".
+   *
+   * Looked up by name so a renumbered install still counts donations; falls
+   * back to CiviCRM's stock ID 1 when the type table is unavailable.
+   */
+  protected function donationFinancialTypeId(): int {
+    if ($this->donationFinancialTypeId !== NULL) {
+      return $this->donationFinancialTypeId;
+    }
+    $id = NULL;
+    if ($this->database->schema()->tableExists('civicrm_financial_type')) {
+      $id = $this->database->select('civicrm_financial_type', 'ft')
+        ->fields('ft', ['id'])
+        ->condition('ft.name', 'Donation')
+        ->range(0, 1)
+        ->execute()
+        ->fetchField();
+    }
+    $this->donationFinancialTypeId = $id ? (int) $id : 1;
+    return $this->donationFinancialTypeId;
   }
 
   /**
