@@ -27,7 +27,7 @@ class EarlyWarningTripwireTest extends UnitTestCase {
     'member_snapshot_age_days' => 0,
     'chargebee_sync_log_48h' => 190,
     'door_events_24h' => 208,
-    'reminders_days_since' => 0,
+    'reminder_job_hours_since' => 0,
     'mail_giveups_24h' => 0,
     'quiz_completions_7d' => 165,
     'watchdog_peak_hour_24h' => 388,

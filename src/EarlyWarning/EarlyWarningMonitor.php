@@ -150,11 +150,17 @@ class EarlyWarningMonitor {
       'normal' => 'lowest normal day: 54',
       'means' => 'door controllers or the access logger are down.',
     ],
-    'reminders_days_since' => [
-      'op' => 'above', 'value' => 2,
-      'title' => 'Days since CiviCRM sent a scheduled reminder',
-      'normal' => 'normally 0',
-      'means' => 'Send Scheduled Reminders is not completing — event reminders and thank-you emails are not going out.',
+    // Was 'reminders_days_since' (days since CiviCRM sent any reminder).
+    // Since 2026-10-20 class reminders come from instructor_companion, so
+    // CiviCRM only sends thank-yous and meetup reminders and quiet days are
+    // normal: it tripped 11-06 and 11-15 with the job running every 8 min.
+    // The failure it was for is the job stopping, so read that directly.
+    // A disabled job counts too: its last run keeps getting older.
+    'reminder_job_hours_since' => [
+      'op' => 'above', 'value' => 6,
+      'title' => 'Hours since the CiviCRM reminder job last ran',
+      'normal' => 'normally under 1; it runs every few minutes',
+      'means' => 'the CiviCRM Send Scheduled Reminders job has stopped or been switched off: thank-you emails and meetup reminders are not going out.',
     ],
     'mail_giveups_24h' => [
       'op' => 'above', 'value' => 0,
@@ -383,7 +389,7 @@ class EarlyWarningMonitor {
       'paying_not_setup_open' => ['requires' => 'ms_billing_mismatch', 'sql' => "SELECT COUNT(*) FROM ms_billing_mismatch WHERE IFNULL(resolved_ts, 0) = 0 AND IFNULL(dismissed_ts, 0) = 0"],
       'chargebee_sync_log_48h' => ['requires' => 'watchdog', 'sql' => "SELECT COUNT(*) FROM watchdog WHERE type = 'chargebee_status_sync' AND timestamp >= UNIX_TIMESTAMP() - 2*86400"],
       'door_events_24h' => ['requires' => 'access_control_log_field_data', 'sql' => "SELECT COUNT(*) FROM access_control_log_field_data WHERE created >= UNIX_TIMESTAMP() - 86400"],
-      'reminders_days_since' => ['requires' => 'civicrm_action_log', 'sql' => "SELECT DATEDIFF(NOW(), MAX(action_date_time)) FROM civicrm_action_log"],
+      'reminder_job_hours_since' => ['requires' => 'civicrm_job', 'sql' => "SELECT TIMESTAMPDIFF(HOUR, MAX(last_run), NOW()) FROM civicrm_job WHERE api_action = 'send_reminder'"],
       'mail_giveups_24h' => ['requires' => 'watchdog', 'sql' => "SELECT COUNT(*) FROM watchdog WHERE type = 'makerspace_mail_retry' AND message LIKE 'Giving up%' AND timestamp >= UNIX_TIMESTAMP() - 86400"],
       'digest_days_since' => ['requires' => 'civicrm_mailing', 'sql' => "SELECT DATEDIFF(NOW(), MAX(created_date)) FROM civicrm_mailing WHERE name LIKE 'MakeHaven Weekly Digest%'"],
       'quiz_completions_7d' => ['requires' => 'quiz_result', 'sql' => "SELECT COUNT(*) FROM quiz_result WHERE is_invalid = 0 AND time_end >= UNIX_TIMESTAMP() - 7*86400"],
