@@ -176,4 +176,19 @@ class EarlyWarningTripwireTest extends UnitTestCase {
     $this->assertSame([], EarlyWarningMonitor::evaluate(['door_events_24h' => 0.0], $wires));
   }
 
+  /**
+   * Gift card wires: always 0 / at least one cohort; NULL (page off) skips.
+   *
+   * @covers ::evaluate
+   */
+  public function testGiftCardWires(): void {
+    $ok = ['jumpstart_open_gems_cohorts' => 2.0, 'gift_card_orders_without_card' => 0.0, 'gift_card_codes_on_after_use' => 0.0];
+    $this->assertSame([], EarlyWarningMonitor::evaluate($ok + self::NORMAL));
+    $this->assertArrayHasKey('jumpstart_open_gems_cohorts', EarlyWarningMonitor::evaluate(['jumpstart_open_gems_cohorts' => 0.0] + $ok + self::NORMAL));
+    // Jumpstart page off: the probe reads NULL and the wire stays quiet.
+    $this->assertSame([], EarlyWarningMonitor::evaluate(['jumpstart_open_gems_cohorts' => NULL] + $ok + self::NORMAL));
+    $this->assertArrayHasKey('gift_card_orders_without_card', EarlyWarningMonitor::evaluate(['gift_card_orders_without_card' => 1.0] + $ok + self::NORMAL));
+    $this->assertArrayHasKey('gift_card_codes_on_after_use', EarlyWarningMonitor::evaluate(['gift_card_codes_on_after_use' => 1.0] + $ok + self::NORMAL));
+  }
+
 }

@@ -189,6 +189,28 @@ class EarlyWarningMonitor {
       'normal' => 'always 0',
       'means' => 'CiviCRM will fail on every page that loads that field group (contact view, registration, join). Add the column (see civicrm_custom_field.column_name) or disable the field.',
     ],
+    // Gift cards (2026-11-19): the Jumpstart is sold on its own page but used
+    // on a GEMS cohort, so unpublishing or filling the cohorts silently
+    // strands every card sold. Read only while the Jumpstart page is on.
+    // Full check: drush mh:gift-card-preflight.
+    'jumpstart_open_gems_cohorts' => [
+      'op' => 'below', 'value' => 1,
+      'title' => 'GEMS cohorts a Jumpstart card can be used on',
+      'normal' => 'at least 1 while the Jumpstart is on sale',
+      'means' => 'no GEMS cohort is public, open for registration and has a seat, so Jumpstart buyers cannot use the GEMS half. Publish a cohort or take the Jumpstart page down.',
+    ],
+    'gift_card_orders_without_card' => [
+      'op' => 'above', 'value' => 0,
+      'title' => 'Paid gift card orders with no card',
+      'normal' => 'always 0',
+      'means' => 'a buyer paid and has no working code. Run drush mh:gift-card-preflight; cron should issue it, so cron or the ledger is failing.',
+    ],
+    'gift_card_codes_on_after_use' => [
+      'op' => 'above', 'value' => 0,
+      'title' => 'Used or void gift cards whose discount code still works',
+      'normal' => 'always 0',
+      'means' => 'a spent or refunded card can still be used at registration. drush mh:gift-card-check <code> on each.',
+    ],
   ];
 
   /**
@@ -399,6 +421,9 @@ class EarlyWarningMonitor {
       'lending_checkouts_7d' => ['requires' => 'library_transaction__field_library_action', 'sql' => "SELECT COUNT(*) FROM library_transaction_field_data t JOIN library_transaction__field_library_action a ON a.entity_id = t.id WHERE a.field_library_action_value = 'withdraw' AND t.created >= UNIX_TIMESTAMP() - 7*86400"],
       'store_lines_7d' => ['requires' => 'material_transaction_field_data', 'sql' => "SELECT COUNT(*) FROM material_transaction_field_data WHERE created >= UNIX_TIMESTAMP() - 7*86400"],
       'watchdog_peak_hour_24h' => ['requires' => 'watchdog', 'sql' => "SELECT IFNULL(MAX(c), 0) FROM (SELECT COUNT(*) c FROM watchdog WHERE timestamp >= UNIX_TIMESTAMP() - 86400 AND type NOT IN ('page not found', 'access denied') GROUP BY type, FLOOR(timestamp / 3600)) t"],
+      'jumpstart_open_gems_cohorts' => ['requires' => 'makerspace_gift_card', 'sql' => "SELECT IF((SELECT COUNT(*) FROM civicrm_contribution_page WHERE name = 'jumpstart_gift' AND is_active = 1) = 0, NULL, (SELECT COUNT(*) FROM civicrm_event e WHERE e.event_type_id = 7 AND e.title LIKE '%GEMS%' AND e.is_active = 1 AND e.is_public = 1 AND e.is_online_registration = 1 AND e.is_template = 0 AND e.start_date > NOW() AND (e.registration_end_date IS NULL OR e.registration_end_date > NOW()) AND (e.registration_start_date IS NULL OR e.registration_start_date <= NOW()) AND (IFNULL(e.max_participants, 0) = 0 OR e.max_participants > (SELECT COUNT(*) FROM civicrm_participant p JOIN civicrm_participant_status_type st ON st.id = p.status_id AND st.is_counted = 1 WHERE p.event_id = e.id AND p.is_test = 0))))"],
+      'gift_card_orders_without_card' => ['requires' => 'makerspace_gift_card', 'sql' => "SELECT COUNT(*) FROM civicrm_contribution c JOIN civicrm_financial_type ft ON ft.id = c.financial_type_id AND ft.name = 'Gift Card' JOIN civicrm_option_value s ON s.value = c.contribution_status_id AND s.name = 'Completed' JOIN civicrm_option_group g ON g.id = s.option_group_id AND g.name = 'contribution_status' WHERE c.is_test = 0 AND c.receive_date < NOW() - INTERVAL 3 HOUR AND NOT EXISTS (SELECT 1 FROM makerspace_gift_card gc WHERE gc.contribution_id = c.id)"],
+      'gift_card_codes_on_after_use' => ['requires' => 'makerspace_gift_card', 'sql' => "SELECT COUNT(*) FROM makerspace_gift_card gc JOIN cividiscount_item d ON d.id = gc.discount_id WHERE d.is_active = 1 AND (gc.status IN ('used', 'void') OR gc.balance_cents <= 0)"],
       'civicrm_custom_fields_missing_column' => ['requires' => 'civicrm_custom_field', 'sql' => "SELECT COUNT(*) FROM civicrm_custom_field f JOIN civicrm_custom_group g ON g.id = f.custom_group_id LEFT JOIN information_schema.columns c ON c.table_schema = DATABASE() AND c.table_name = g.table_name AND c.column_name = f.column_name WHERE f.is_active = 1 AND g.is_active = 1 AND c.column_name IS NULL"],
     ];
   }
