@@ -6,6 +6,7 @@ use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\State\StateInterface;
+use Drupal\update\UpdateManagerInterface;
 use GuzzleHttp\ClientInterface;
 use Psr\Log\LoggerInterface;
 
@@ -210,6 +211,22 @@ class EarlyWarningMonitor {
       'title' => 'Used or void gift cards whose discount code still works',
       'normal' => 'always 0',
       'means' => 'a spent or refunded card can still be used at registration. drush mh:gift-card-check <code> on each.',
+    ],
+    // 2026-11-23: flag and fullcalendar_view sat on unsupported releases for
+    // a month. Drupal's own update email did say so, weekly, to admin@, where
+    // it landed under a filter label unread. Read from the same data
+    // (/admin/reports/updates, refreshed weekly by update.settings).
+    'contrib_unsupported' => [
+      'op' => 'above', 'value' => 0,
+      'title' => 'Modules or themes on an unsupported or revoked release',
+      'normal' => 'always 0',
+      'means' => 'a release we run gets no more fixes, security ones included. See /admin/reports/updates and stage an update.',
+    ],
+    'contrib_security_updates' => [
+      'op' => 'above', 'value' => 0,
+      'title' => 'Modules, themes or core with a security update not installed',
+      'normal' => '0 except the days between a release and our deploy',
+      'means' => 'a published security fix is not on the site. See /admin/reports/updates and stage it with the next deploy.',
     ],
   ];
 
@@ -450,12 +467,69 @@ class EarlyWarningMonitor {
         $readings[$key] = NULL;
       }
     }
+    if ($probes === NULL) {
+      $readings += $this->updateReadings();
+    }
     if (isset($readings['join_form_settled_7d'], $readings['join_form_no_account_7d'])) {
       $readings['join_unaccounted_pct'] = $readings['join_form_settled_7d'] > 0
         ? round(100 * $readings['join_form_no_account_7d'] / $readings['join_form_settled_7d'], 1)
         : 0.0;
     }
     return $readings;
+  }
+
+  /**
+   * Readings from Drupal's available-updates data (the update module).
+   *
+   * Uses the stored release data only; it never fetches. Skipped when the
+   * update module is off or has no data yet, so no data is not read as 0.
+   *
+   * @return array
+   *   ['contrib_unsupported' => n, 'contrib_security_updates' => n] or [].
+   */
+  protected function updateReadings(): array {
+    if (!\Drupal::moduleHandler()->moduleExists('update')) {
+      return [];
+    }
+    try {
+      \Drupal::moduleHandler()->loadInclude('update', 'inc', 'update.compare');
+      $available = update_get_available(FALSE);
+      if (empty($available)) {
+        return [];
+      }
+      return self::countUpdateStatuses(update_calculate_project_data($available));
+    }
+    catch (\Throwable $e) {
+      $this->logger->error('Early warning update readings failed: @msg', ['@msg' => $e->getMessage()]);
+      return ['contrib_unsupported' => NULL, 'contrib_security_updates' => NULL];
+    }
+  }
+
+  /**
+   * Counts projects by the update statuses that need action.
+   *
+   * @param array $projects
+   *   From update_calculate_project_data(): [name => ['status' => int, ...]].
+   *
+   * @return array
+   *   ['contrib_unsupported' => float, 'contrib_security_updates' => float].
+   */
+  public static function countUpdateStatuses(array $projects): array {
+    $unsupported = 0;
+    $security = 0;
+    foreach ($projects as $project) {
+      $status = $project['status'] ?? NULL;
+      if ($status === UpdateManagerInterface::NOT_SUPPORTED || $status === UpdateManagerInterface::REVOKED) {
+        $unsupported++;
+      }
+      elseif ($status === UpdateManagerInterface::NOT_SECURE) {
+        $security++;
+      }
+    }
+    return [
+      'contrib_unsupported' => (float) $unsupported,
+      'contrib_security_updates' => (float) $security,
+    ];
   }
 
   /**

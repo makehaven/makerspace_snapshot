@@ -4,6 +4,8 @@ namespace Drupal\Tests\makerspace_snapshot\Unit;
 
 use Drupal\makerspace_snapshot\EarlyWarning\EarlyWarningMonitor;
 use Drupal\Tests\UnitTestCase;
+use Drupal\update\UpdateFetcherInterface;
+use Drupal\update\UpdateManagerInterface;
 
 /**
  * Tripwire evaluation and alert planning for the early-warning monitor.
@@ -32,6 +34,8 @@ class EarlyWarningTripwireTest extends UnitTestCase {
     'quiz_completions_7d' => 165,
     'watchdog_peak_hour_24h' => 388,
     'civicrm_custom_fields_missing_column' => 0,
+    'contrib_unsupported' => 0,
+    'contrib_security_updates' => 0,
   ];
 
   /**
@@ -50,6 +54,38 @@ class EarlyWarningTripwireTest extends UnitTestCase {
     $this->assertArrayHasKey('door_events_24h', EarlyWarningMonitor::evaluate(['door_events_24h' => 19.0] + self::NORMAL));
     $this->assertSame([], EarlyWarningMonitor::evaluate(['mail_giveups_24h' => 0.0] + self::NORMAL));
     $this->assertArrayHasKey('mail_giveups_24h', EarlyWarningMonitor::evaluate(['mail_giveups_24h' => 1.0] + self::NORMAL));
+  }
+
+  /**
+   * Live /admin/reports/updates on 2026-11-23: two unsupported releases.
+   *
+   * @covers ::countUpdateStatuses
+   * @covers ::evaluate
+   */
+  public function testUnsupportedReleasesTrip(): void {
+    $projects = [
+      'drupal' => ['status' => UpdateManagerInterface::CURRENT],
+      'flag' => ['status' => UpdateManagerInterface::NOT_SUPPORTED],
+      'fullcalendar_view' => ['status' => UpdateManagerInterface::NOT_SUPPORTED],
+      'metatag' => ['status' => UpdateManagerInterface::NOT_CURRENT],
+      'unfetched' => ['status' => UpdateFetcherInterface::NOT_FETCHED],
+      'no_status' => [],
+    ];
+    $counts = EarlyWarningMonitor::countUpdateStatuses($projects);
+    $this->assertSame(['contrib_unsupported' => 2.0, 'contrib_security_updates' => 0.0], $counts);
+    $tripped = EarlyWarningMonitor::evaluate($counts + self::NORMAL);
+    $this->assertSame(['contrib_unsupported'], array_keys($tripped));
+
+    // A revoked release counts as unsupported; a security update separately.
+    $counts = EarlyWarningMonitor::countUpdateStatuses([
+      'a' => ['status' => UpdateManagerInterface::REVOKED],
+      'b' => ['status' => UpdateManagerInterface::NOT_SECURE],
+    ]);
+    $this->assertSame(['contrib_unsupported' => 1.0, 'contrib_security_updates' => 1.0], $counts);
+    $this->assertSame(['contrib_unsupported', 'contrib_security_updates'], array_keys(EarlyWarningMonitor::evaluate($counts + self::NORMAL)));
+
+    // Only out-of-date (not insecure) projects: nothing trips.
+    $this->assertSame([], EarlyWarningMonitor::evaluate(EarlyWarningMonitor::countUpdateStatuses(['m' => ['status' => UpdateManagerInterface::NOT_CURRENT]]) + self::NORMAL));
   }
 
   /**
